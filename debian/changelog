@@ -1,3 +1,10 @@
+xscreensaver (5.36-2) unstable; urgency=medium
+
+  * debian/patches/91_xss.patch:
+    only get idle time using libxss, not like MIT-SCREEN-SAVER, it won't crash the X server.
+
+ -- multiSnow <infinity.blick.winkel@gmail.com>  Mon, 01 May 2017 20:53:31 +0800
+
 xscreensaver (5.36-1) unstable; urgency=medium
 
   * New upstream release 5.36, changes since 5.34:

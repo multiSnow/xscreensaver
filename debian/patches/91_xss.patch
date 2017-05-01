@@ -1,0 +1,171 @@
+diff --git a/configure.in b/configure.in
+index 3c55835..e99eb40 100644
+--- a/configure.in
++++ b/configure.in
+@@ -64,6 +64,9 @@ AH_TEMPLATE([HAVE_XHPDISABLERESET],
+ #	    [Define this if you have the SGI-VIDEO-CONTROL extension.  This
+ #	    is standard on Irix systems, and not available elsewhere.])
+ 
++AH_TEMPLATE([HAVE_XSS_EXTENSION],
++	    [Define this if you have the X Screensaver Extension.])
++
+ AH_TEMPLATE([HAVE_DPMS_EXTENSION],
+ 	    [Define this if you have the XDPMS extension.  This is standard
+ 	    on sufficiently-recent XFree86 systems, and possibly elsewhere. 
+@@ -1562,6 +1565,35 @@ fi
+ #  exit 1
+ #fi
+ 
++
++###############################################################################
++#
++#       Check for the X Screensaver Extension.
++#
++###############################################################################
++
++have_xss=no
++with_xss_req=unspecified
++AC_ARG_WITH(xss-ext,
++[  --with-xss-ext          Include support for the X Screensaver Extension.],
++  [with_xss="$withval"; with_xss_req="$withval"],[with_xss=yes])
++
++HANDLE_X_PATH_ARG(with_xss, --with-xss-ext, XSS)
++
++if test "$with_xss" = yes; then
++  AC_CHECK_X_HEADER(X11/extensions/scrnsaver.h, [have_xss=yes], [have_xss=no],)
++  if test "$have_xss" = yes; then
++    AC_CHECK_X_LIB(Xss, XScreenSaverAllocInfo, [have_xss=yes], [have_xss=no])
++    if test "$have_xss" = yes; then
++      AC_DEFINE(HAVE_XSS_EXTENSION)
++      SAVER_LIBS="$SAVER_LIBS -lXss"
++    fi
++  fi
++elif test "$with_xss" != no; then
++  echo "error: must be yes or no: --with-xss-ext=$with_xss"
++  exit 1
++fi
++
+ 
+ ###############################################################################
+ #
+diff --git a/driver/prefs.c b/driver/prefs.c
+index ee3a196..9a7f4cb 100644
+--- a/driver/prefs.c
++++ b/driver/prefs.c
+@@ -1140,6 +1140,9 @@ load_init_file (Display *dpy, saver_preferences *p)
+                                                      "mitSaverExtension",
+ 						     "Boolean");
+ #endif
++#ifdef HAVE_XSS_EXTENSION
++  p->use_xss_extension = True;
++#endif
+ 
+   p->use_proc_interrupts = get_boolean_resource (dpy,
+                                                  "procInterrupts", "Boolean");
+diff --git a/driver/timers.c b/driver/timers.c
+index 318a61f..c4eab64 100644
+--- a/driver/timers.c
++++ b/driver/timers.c
+@@ -37,6 +37,10 @@
+ 
+ #ifdef HAVE_MIT_SAVER_EXTENSION
+ #include <X11/extensions/scrnsaver.h>
++#else
++# ifdef HAVE_XSS_EXTENSION
++#  include <X11/extensions/scrnsaver.h>
++# endif
+ #endif /* HAVE_MIT_SAVER_EXTENSION */
+ 
+ #ifdef HAVE_SGI_SAVER_EXTENSION
+@@ -799,6 +803,19 @@ sleep_until_idle (saver_info *si, Bool until_idle_p)
+ 		  idle = 0;
+ 		}
+ 	    else
++#else
++# ifdef HAVE_XSS_EXTENSION
++	      if (si->using_xss_extension)
++		{
++		  XScreenSaverInfo *xssinfo;
++		  xssinfo=XScreenSaverAllocInfo();
++		  XScreenSaverQueryInfo(si->dpy,
++					DefaultRootWindow(si->dpy),
++					xssinfo);
++		  idle = xssinfo->idle;
++		}
++	    else
++# endif /* HAVE_XSS_EXTENSION */
+ #endif /* HAVE_MIT_SAVER_EXTENSION */
+ #ifdef HAVE_SGI_SAVER_EXTENSION
+ 	      if (si->using_sgi_saver_extension)
+diff --git a/driver/types.h b/driver/types.h
+index f1630b0..da6069c 100644
+--- a/driver/types.h
++++ b/driver/types.h
+@@ -151,6 +151,7 @@ struct saver_preferences {
+ 
+   Bool use_xidle_extension;	/* which extension to use, if possible */
+   Bool use_mit_saver_extension;
++  Bool use_xss_extension;
+   Bool use_sgi_saver_extension;
+   Bool use_proc_interrupts;
+   Bool use_xinput_extension;
+@@ -203,10 +204,16 @@ struct saver_info {
+   Bool using_mit_saver_extension;  /* Note that `p->use_*' is the *request*, */
+   Bool using_sgi_saver_extension;  /* and `si->using_*' is the *reality*.    */
+   Bool using_proc_interrupts;
++  Bool using_xss_extension;
+ 
+ # ifdef HAVE_MIT_SAVER_EXTENSION
+   int mit_saver_ext_event_number;
+   int mit_saver_ext_error_number;
++# else
++#  ifdef HAVE_XSS_EXTENSION
++  int xss_ext_event_number;
++  int xss_ext_error_number;
++#  endif
+ # endif
+ # ifdef HAVE_SGI_SAVER_EXTENSION
+   int sgi_saver_ext_event_number;
+diff --git a/driver/xscreensaver.c b/driver/xscreensaver.c
+index 76969f2..ee79d2a 100644
+--- a/driver/xscreensaver.c
++++ b/driver/xscreensaver.c
+@@ -923,6 +923,7 @@ initialize_server_extensions (saver_info *si)
+   Bool server_has_xidle_extension_p = False;
+   Bool server_has_sgi_saver_extension_p = False;
+   Bool server_has_mit_saver_extension_p = False;
++  Bool server_has_xss_extension_p = False;
+   Bool system_has_proc_interrupts_p = False;
+   Bool server_has_xinput_extension_p = False;
+   const char *piwhy = 0;
+@@ -930,6 +931,7 @@ initialize_server_extensions (saver_info *si)
+   si->using_xidle_extension = p->use_xidle_extension;
+   si->using_sgi_saver_extension = p->use_sgi_saver_extension;
+   si->using_mit_saver_extension = p->use_mit_saver_extension;
++  si->using_xss_extension = p->use_xss_extension;
+   si->using_proc_interrupts = p->use_proc_interrupts;
+   si->using_xinput_extension = p->use_xinput_extension;
+ 
+@@ -950,6 +952,13 @@ initialize_server_extensions (saver_info *si)
+     XScreenSaverQueryExtension (si->dpy,
+                                 &si->mit_saver_ext_event_number,
+                                 &si->mit_saver_ext_error_number);
++#else
++# ifdef HAVE_XSS_EXTENSION
++  server_has_xss_extension_p =
++    XScreenSaverQueryExtension (si->dpy,
++                                &si->xss_ext_event_number,
++                                &si->xss_ext_error_number);
++# endif
+ #endif
+ #ifdef HAVE_PROC_INTERRUPTS
+   system_has_proc_interrupts_p = query_proc_interrupts_available (si, &piwhy);
+@@ -983,6 +992,8 @@ initialize_server_extensions (saver_info *si)
+ 
+   if (!server_has_mit_saver_extension_p)
+     si->using_mit_saver_extension = False;
++  if (!server_has_xss_extension_p)
++    si->using_xss_extension = False;
+   else if (p->verbose_p)
+     {
+       if (si->using_mit_saver_extension)

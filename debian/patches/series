@@ -24,3 +24,5 @@
 80_Makefile_in-clean-fix.patch
 81_hacks_deterministic_file_order.patch
 90_remove_Easter_egg_about_version.patch
+
+91_xss.patch
