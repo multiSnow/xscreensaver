@@ -1,4 +1,4 @@
-xscreensaver (5.36-1) UNRELEASED; urgency=medium
+xscreensaver (5.36-1) unstable; urgency=medium
 
   * New upstream release 5.36, changes since 5.34:
     - New hacks (modes): `dymaxionmap', `unicrud', `energystream',
@@ -26,7 +26,7 @@ xscreensaver (5.36-1) UNRELEASED; urgency=medium
   * debian/patches/75_Makefile_in-ignore-alien-platforms.patch:
     Do not descend into OSX and android folders in make clean
 
- -- Tormod Volden <debian.tormod@gmail.com>  Thu, 07 Apr 2016 22:28:44 +0200
+ -- Tormod Volden <debian.tormod@gmail.com>  Sun, 11 Dec 2016 15:18:05 +0100
 
 xscreensaver (5.34-2) unstable; urgency=medium
 
