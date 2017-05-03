@@ -1,5 +1,6 @@
-diff --git a/configure.in b/configure.in
-index 3c55835..e99eb40 100644
+#
+# check idle time of X server with XSS
+#
 --- a/configure.in
 +++ b/configure.in
 @@ -64,6 +64,9 @@ AH_TEMPLATE([HAVE_XHPDISABLERESET],
@@ -48,8 +49,6 @@ index 3c55835..e99eb40 100644
  
  ###############################################################################
  #
-diff --git a/driver/prefs.c b/driver/prefs.c
-index ee3a196..9a7f4cb 100644
 --- a/driver/prefs.c
 +++ b/driver/prefs.c
 @@ -1140,6 +1140,9 @@ load_init_file (Display *dpy, saver_preferences *p)
@@ -62,8 +61,6 @@ index ee3a196..9a7f4cb 100644
  
    p->use_proc_interrupts = get_boolean_resource (dpy,
                                                   "procInterrupts", "Boolean");
-diff --git a/driver/timers.c b/driver/timers.c
-index 318a61f..c4eab64 100644
 --- a/driver/timers.c
 +++ b/driver/timers.c
 @@ -37,6 +37,10 @@
@@ -77,7 +74,7 @@ index 318a61f..c4eab64 100644
  #endif /* HAVE_MIT_SAVER_EXTENSION */
  
  #ifdef HAVE_SGI_SAVER_EXTENSION
-@@ -799,6 +803,19 @@ sleep_until_idle (saver_info *si, Bool until_idle_p)
+@@ -799,6 +803,17 @@ sleep_until_idle (saver_info *si, Bool until_idle_p)
  		  idle = 0;
  		}
  	    else
@@ -85,23 +82,30 @@ index 318a61f..c4eab64 100644
 +# ifdef HAVE_XSS_EXTENSION
 +	      if (si->using_xss_extension)
 +		{
-+		  XScreenSaverInfo *xssinfo;
-+		  xssinfo=XScreenSaverAllocInfo();
 +		  XScreenSaverQueryInfo(si->dpy,
 +					DefaultRootWindow(si->dpy),
-+					xssinfo);
-+		  idle = xssinfo->idle;
++					si->xss_info);
++		  idle = si->xss_info->idle;
 +		}
 +	    else
 +# endif /* HAVE_XSS_EXTENSION */
  #endif /* HAVE_MIT_SAVER_EXTENSION */
  #ifdef HAVE_SGI_SAVER_EXTENSION
  	      if (si->using_sgi_saver_extension)
-diff --git a/driver/types.h b/driver/types.h
-index f1630b0..da6069c 100644
 --- a/driver/types.h
 +++ b/driver/types.h
-@@ -151,6 +151,7 @@ struct saver_preferences {
+@@ -63,6 +63,10 @@ struct poll_mouse_data {
+   time_t time;
+ };
+ 
++#ifdef HAVE_XSS_EXTENSION
++#include <X11/extensions/scrnsaver.h>
++#endif
++
+ #ifdef HAVE_XINPUT
+ /* XInputExtension device support */
+ #include <X11/extensions/XInput.h>
+@@ -151,6 +155,7 @@ struct saver_preferences {
  
    Bool use_xidle_extension;	/* which extension to use, if possible */
    Bool use_mit_saver_extension;
@@ -109,7 +113,7 @@ index f1630b0..da6069c 100644
    Bool use_sgi_saver_extension;
    Bool use_proc_interrupts;
    Bool use_xinput_extension;
-@@ -203,10 +204,16 @@ struct saver_info {
+@@ -203,10 +208,17 @@ struct saver_info {
    Bool using_mit_saver_extension;  /* Note that `p->use_*' is the *request*, */
    Bool using_sgi_saver_extension;  /* and `si->using_*' is the *reality*.    */
    Bool using_proc_interrupts;
@@ -122,15 +126,24 @@ index f1630b0..da6069c 100644
 +#  ifdef HAVE_XSS_EXTENSION
 +  int xss_ext_event_number;
 +  int xss_ext_error_number;
++  XScreenSaverInfo *xss_info;
 +#  endif
  # endif
  # ifdef HAVE_SGI_SAVER_EXTENSION
    int sgi_saver_ext_event_number;
-diff --git a/driver/xscreensaver.c b/driver/xscreensaver.c
-index 76969f2..ee79d2a 100644
 --- a/driver/xscreensaver.c
 +++ b/driver/xscreensaver.c
-@@ -923,6 +923,7 @@ initialize_server_extensions (saver_info *si)
+@@ -660,6 +660,9 @@ connect_to_server (saver_info *si, int *argc, char **argv)
+   XtAppSetErrorMsgHandler (si->app, 0);
+ 
+   si->dpy = XtDisplay (toplevel_shell);
++#ifdef HAVE_XSS_EXTENSION
++  si->xss_info = XScreenSaverAllocInfo();
++#endif
+   si->prefs.db = XtDatabase (si->dpy);
+   XtGetApplicationNameAndClass (si->dpy, &progname, &progclass);
+ 
+@@ -923,6 +926,7 @@ initialize_server_extensions (saver_info *si)
    Bool server_has_xidle_extension_p = False;
    Bool server_has_sgi_saver_extension_p = False;
    Bool server_has_mit_saver_extension_p = False;
@@ -138,7 +151,7 @@ index 76969f2..ee79d2a 100644
    Bool system_has_proc_interrupts_p = False;
    Bool server_has_xinput_extension_p = False;
    const char *piwhy = 0;
-@@ -930,6 +931,7 @@ initialize_server_extensions (saver_info *si)
+@@ -930,6 +934,7 @@ initialize_server_extensions (saver_info *si)
    si->using_xidle_extension = p->use_xidle_extension;
    si->using_sgi_saver_extension = p->use_sgi_saver_extension;
    si->using_mit_saver_extension = p->use_mit_saver_extension;
@@ -146,7 +159,7 @@ index 76969f2..ee79d2a 100644
    si->using_proc_interrupts = p->use_proc_interrupts;
    si->using_xinput_extension = p->use_xinput_extension;
  
-@@ -950,6 +952,13 @@ initialize_server_extensions (saver_info *si)
+@@ -950,6 +955,13 @@ initialize_server_extensions (saver_info *si)
      XScreenSaverQueryExtension (si->dpy,
                                  &si->mit_saver_ext_event_number,
                                  &si->mit_saver_ext_error_number);
@@ -160,7 +173,7 @@ index 76969f2..ee79d2a 100644
  #endif
  #ifdef HAVE_PROC_INTERRUPTS
    system_has_proc_interrupts_p = query_proc_interrupts_available (si, &piwhy);
-@@ -983,6 +992,8 @@ initialize_server_extensions (saver_info *si)
+@@ -983,6 +995,8 @@ initialize_server_extensions (saver_info *si)
  
    if (!server_has_mit_saver_extension_p)
      si->using_mit_saver_extension = False;
