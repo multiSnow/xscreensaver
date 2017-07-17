@@ -1,3 +1,17 @@
+xscreensaver (5.37-1) unstable; urgency=medium
+
+  * New upstream release 5.37, changes since 5.36:
+    - New hack, `vigilance'.
+    - Added Mac Software Update and VMware to `bsod'.
+    - OSX: Grabbing the desktop works again.
+    - OSX: Pinch to zoom.
+    - Android: Both Daydreams and Live Wallpapers are implemented.
+    - Updated `webcollage' for recent changes.
+    - Various bug fixes.
+  * Refresh 30_hacks_xanalogtv.patch
+
+ -- multiSnow <infinity.blick.winkel@gmail.com>  Mon, 17 Jul 2017 20:29:36 +0800
+
 xscreensaver (5.36-2) unstable; urgency=medium
 
   * debian/patches/91_xss.patch:
