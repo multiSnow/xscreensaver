@@ -15,12 +15,12 @@ Index: xscreensaver-5.04/hacks/xanalogtv.c
  
  /* #define DEBUG 1 */
  /* #define USE_TEST_PATTERNS */
-@@ -170,7 +170,7 @@
-   ypos += st->ugly_font.char_h*5/2;
+@@ -172,7 +172,7 @@
  
-   analogtv_draw_xpm(st->tv, input,
--                    logo_50_xpm, xpos - 100, ypos);
-+                    logo_50_bad_xpm, xpos - 100, ypos);
+   if (! st->colorbars_only_p)
+     analogtv_draw_xpm(st->tv, input,
+-                      logo_50_xpm, xpos - 100, ypos);
++                      logo_50_bad_xpm, xpos - 100, ypos);
  
    ypos += 58;
  
