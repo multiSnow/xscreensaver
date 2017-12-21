@@ -1,13 +1,12 @@
 diff --git a/Makefile.in b/Makefile.in
-index 17c698d..2e0117a 100644
+index 17c698d..67a4959 100644
 --- a/Makefile.in
 +++ b/Makefile.in
-@@ -7,7 +7,7 @@ VPATH		= @srcdir@
+@@ -17,6 +17,7 @@ TARFILES	= README README.hacking README.VMS INSTALL \
+ 		  OSX/xscreensaver.xcodeproj/project.pbxproj
  
- SHELL		= /bin/sh
- SUBDIRS 	= utils jwxyz hacks hacks/glx driver po
--SUBDIRS2	= $(SUBDIRS) OSX android
-+SUBDIRS2	= $(SUBDIRS)
- TARFILES	= README README.hacking README.VMS INSTALL \
- 		  configure configure.in Makefile.in config.h.in \
- 		  config.h-vms install-sh setup.com config.guess aclocal.m4 \
+ TAR		= tar
++SUBDIRS2	:= $(filter-out OSX android,$(SUBDIRS2))
+ 
+ MAKE_SUBDIR  = for dir in $(SUBDIRS); do (cd $$dir; $(MAKE) $@) || exit 5; done
+ MAKE_SUBDIR2 = for dir in $(SUBDIRS2); do (cd $$dir; $(MAKE) $@) || exit 5; done
