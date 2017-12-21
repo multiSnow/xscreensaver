@@ -1,0 +1,60 @@
+# Parental Advisory :)
+# Make the titles more innocent, for the small children using Debian
+
+Index: xscreensaver-git/hacks/barcode.c
+===================================================================
+--- xscreensaver-git.orig/hacks/barcode.c	2016-05-28 19:05:42.729678148 +0200
++++ xscreensaver-git/hacks/barcode.c	2016-05-28 19:05:42.729678148 +0200
+@@ -118,8 +118,6 @@
+   "belly",
+   "bliss",
+   "bogosity",
+-  "boobies",
+-  "boobs",
+   "booty",
+   "bread",
+   "bubba",
+@@ -132,7 +130,6 @@
+   "children",
+   "chocolate",
+   "CLONE",
+-  "cock",
+   "constriction",
+   "contrition",
+   "cop",
+@@ -172,7 +169,6 @@
+   "fear",
+   "fever",
+   "filth",
+-  "flatulence",
+   "fluff",
+   "fnord",
+   "freedom",
+@@ -189,10 +185,7 @@
+   "happiness",
+   "hate",
+   "helplessness",
+-  "hemorrhoid",
+   "hermaphrodite",
+-  "heroin",
+-  "heroine",
+   "hope",
+   "hysteria",
+   "icepick",
+@@ -266,7 +259,6 @@
+   "punishment",
+   "punk rock",
+   "punk",
+-  "pussy",
+   "quagmire",
+   "quarantine",
+   "quartz",
+@@ -334,8 +326,6 @@
+   "vegetarian",
+   "venom",
+   "verifiability",
+-  "viagra",
+-  "vibrator",
+   "victim",
+   "vignette",
+   "villainy",

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -e
+
+if [ -L /etc/X11/app-defaults/XScreenSaver ]; then
+    if [ "$(readlink /etc/X11/app-defaults/XScreenSaver)" = "XScreenSaver-nogl" ]; then
+        rm /etc/X11/app-defaults/XScreenSaver
+    fi
+fi
+
+cd /etc/X11/app-defaults
+if [ ! -e XScreenSaver ]; then
+    if [ -f XScreenSaver-gl ]; then
+        ln -sf XScreenSaver-gl  XScreenSaver
+    else
+        ln -sf XScreenSaver-nogl XScreenSaver
+    fi
+fi
+
+#DEBHELPER#

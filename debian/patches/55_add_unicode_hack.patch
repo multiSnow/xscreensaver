@@ -1,0 +1,16 @@
+#
+# This program is from the "unicode" package, just added here
+# as a convenience. See bug #560184
+#
+Index: xscreensaver/driver/XScreenSaver.ad.in
+===================================================================
+--- xscreensaver.orig/driver/XScreenSaver.ad.in	2015-07-19 11:29:42.000000000 +0200
++++ xscreensaver/driver/XScreenSaver.ad.in	2015-07-19 11:29:42.000000000 +0200
+@@ -196,6 +196,7 @@
+ 				goop -root				    \n\
+ 				grav -root				    \n\
+ 				ifs -root				    \n\
++				unicode -root				    \n\
+ @GL_KLUDGE@ GL: 				jigsaw -root				    \n\
+ 				julia -root				    \n\
+ -				kaleidescope -root			    \n\

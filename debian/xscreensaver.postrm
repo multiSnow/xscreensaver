@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in 
+  remove|purge)
+	if [ -L /etc/X11/app-defaults/XScreenSaver ]; then
+	    if [ "$(readlink /etc/X11/app-defaults/XScreenSaver)" = "XScreenSaver-nogl" -o \
+	         "$(readlink /etc/X11/app-defaults/XScreenSaver)" = "XScreenSaver-gl" ]; then
+		rm /etc/X11/app-defaults/XScreenSaver
+	    fi
+	fi
+	;;
+esac
+
+#DEBHELPER#

@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+# Use the correct app defaults
+cd /etc/X11/app-defaults
+if [ ! -e XScreenSaver ]; then
+    if [ -f XScreenSaver-gl ]; then
+	ln -sf XScreenSaver-gl  XScreenSaver
+    else
+	ln -sf XScreenSaver-nogl XScreenSaver
+    fi
+fi
+
+#DEBHELPER#
