@@ -1,11 +1,7 @@
-#
-# logo-50-bad.xpm is a stripped down (64 colors) version
-# Fix for bug #304344
-#
-Index: xscreensaver-5.04/hacks/xanalogtv.c
-===================================================================
---- xscreensaver-5.04.orig/hacks/xanalogtv.c	2006-03-31 09:21:41.000000000 +0200
-+++ xscreensaver-5.04/hacks/xanalogtv.c	2007-12-08 17:47:00.000000000 +0100
+diff --git a/hacks/xanalogtv.c b/hacks/xanalogtv.c
+index d1f3e1b..fad8174 100644
+--- a/hacks/xanalogtv.c
++++ b/hacks/xanalogtv.c
 @@ -42,7 +42,7 @@
  #include "xpm-pixmap.h"
  #include "analogtv.h"
@@ -15,7 +11,7 @@ Index: xscreensaver-5.04/hacks/xanalogtv.c
  
  /* #define DEBUG 1 */
  /* #define USE_TEST_PATTERNS */
-@@ -172,7 +172,7 @@
+@@ -172,7 +172,7 @@ update_smpte_colorbars(analogtv_input *input)
  
    if (! st->colorbars_only_p)
      analogtv_draw_xpm(st->tv, input,

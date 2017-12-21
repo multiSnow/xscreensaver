@@ -1,11 +1,8 @@
-#
-# Use standard (ISO) date and time format
-#
-Index: xscreensaver/driver/XScreenSaver.ad.in
-===================================================================
---- xscreensaver.orig/driver/XScreenSaver.ad.in	2014-10-07 22:48:53.000000000 +0200
-+++ xscreensaver/driver/XScreenSaver.ad.in	2014-10-07 22:48:53.000000000 +0200
-@@ -129,7 +129,9 @@
+diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
+index fa2587a..ef3a17d 100644
+--- a/driver/XScreenSaver.ad.in
++++ b/driver/XScreenSaver.ad.in
+@@ -123,7 +123,9 @@ GetViewPortIsFullOfLies: False
  
  ! The format used for printing the date and time in the password dialog box
  ! (see the strftime(3) manual page for details.)

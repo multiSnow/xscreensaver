@@ -1,11 +1,7 @@
-#
-# This is a stripped down (64 colors) version of the logo
-# Fix for bug #304344
-#
-Index: xscreensaver-5.04/utils/images/logo-50-bad.xpm
-===================================================================
---- /dev/null	1970-01-01 00:00:00.000000000 +0000
-+++ xscreensaver-5.04/utils/images/logo-50-bad.xpm	2007-12-08 17:47:04.000000000 +0100
+diff --git a/utils/images/logo-50-bad.xpm b/utils/images/logo-50-bad.xpm
+index e69de29..ab1b1f0 100644
+--- a/utils/images/logo-50-bad.xpm
++++ b/utils/images/logo-50-bad.xpm
 @@ -0,0 +1,118 @@
 +/* XPM */
 +static char * logo_50_bad_xpm[] = {

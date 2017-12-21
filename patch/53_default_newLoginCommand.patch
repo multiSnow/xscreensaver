@@ -1,15 +1,8 @@
-#
-# This just sets a default. The desktop environment starting
-# xscreensaver should also tell it which command to use, see e.g.
-# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=778470#25
-# We also offer the intermediate band-aid solution of
-# /usr/share/xscreensaver/xscreensaver-wrapper.sh
-#
-Index: xscreensaver/driver/XScreenSaver.ad.in
-===================================================================
---- xscreensaver.orig/driver/XScreenSaver.ad.in	2015-07-19 11:29:34.000000000 +0200
-+++ xscreensaver/driver/XScreenSaver.ad.in	2015-07-19 11:29:34.000000000 +0200
-@@ -144,7 +144,9 @@
+diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
+index fa2587a..4733b42 100644
+--- a/driver/XScreenSaver.ad.in
++++ b/driver/XScreenSaver.ad.in
+@@ -136,7 +136,9 @@ GetViewPortIsFullOfLies: False
  ! Or maybe yet another wheel-reinvention, "lxdm -c USER_SWITCH".
  ! Oh wait, this wheel just keeps getting better: "dm-tool switch-to-greeter".
  !

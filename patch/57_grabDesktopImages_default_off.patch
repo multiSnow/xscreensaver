@@ -1,10 +1,7 @@
-#
-# Bug #679974: xscreensaver-data: disable hacks that reveal the desktop
-#
-Index: xscreensaver/driver/XScreenSaver.ad.in
-===================================================================
---- xscreensaver.orig/driver/XScreenSaver.ad.in	2012-10-18 22:57:01.000000000 +0200
-+++ xscreensaver/driver/XScreenSaver.ad.in	2012-10-18 22:58:52.000000000 +0200
+diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
+index fa2587a..00306a9 100644
+--- a/driver/XScreenSaver.ad.in
++++ b/driver/XScreenSaver.ad.in
 @@ -38,7 +38,7 @@
  *dpmsStandby:		2:00:00
  *dpmsSuspend:		2:00:00

@@ -1,11 +1,8 @@
-#
-# For reproducible builds. Bug #819595
-#
-Index: xscreensaver-git/hacks/Makefile.in
-===================================================================
---- xscreensaver-git.orig/hacks/Makefile.in
-+++ xscreensaver-git/hacks/Makefile.in
-@@ -855,8 +855,8 @@ cwaves:		cwaves.o	$(HACK_OBJS) $(COL)
+diff --git a/hacks/Makefile.in b/hacks/Makefile.in
+index 643a2ca..205179b 100644
+--- a/hacks/Makefile.in
++++ b/hacks/Makefile.in
+@@ -857,8 +857,8 @@ cwaves:		cwaves.o	$(HACK_OBJS) $(COL)
  
  m6502.h:
  	@echo "building m6502.h from $(srcdir)/images/m6502/*.asm"; \

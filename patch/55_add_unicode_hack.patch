@@ -1,12 +1,8 @@
-#
-# This program is from the "unicode" package, just added here
-# as a convenience. See bug #560184
-#
-Index: xscreensaver/driver/XScreenSaver.ad.in
-===================================================================
---- xscreensaver.orig/driver/XScreenSaver.ad.in	2015-07-19 11:29:42.000000000 +0200
-+++ xscreensaver/driver/XScreenSaver.ad.in	2015-07-19 11:29:42.000000000 +0200
-@@ -196,6 +196,7 @@
+diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
+index fa2587a..ef753d8 100644
+--- a/driver/XScreenSaver.ad.in
++++ b/driver/XScreenSaver.ad.in
+@@ -186,6 +186,7 @@ GetViewPortIsFullOfLies: False
  				goop -root				    \n\
  				grav -root				    \n\
  				ifs -root				    \n\

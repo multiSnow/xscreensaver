@@ -1,11 +1,8 @@
-#
-# This hack is not built by default, and we are not shipping it either
-#
-Index: xscreensaver/driver/XScreenSaver.ad.in
-===================================================================
---- xscreensaver.orig/driver/XScreenSaver.ad.in	2015-07-19 11:29:38.000000000 +0200
-+++ xscreensaver/driver/XScreenSaver.ad.in	2015-07-19 11:29:38.000000000 +0200
-@@ -263,7 +263,6 @@
+diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
+index fa2587a..a8f6bc8 100644
+--- a/driver/XScreenSaver.ad.in
++++ b/driver/XScreenSaver.ad.in
+@@ -253,7 +253,6 @@ GetViewPortIsFullOfLies: False
  				xspirograph -root			    \n\
  @GL_KLUDGE@ GL: 				circuit -root				    \n\
  @GL_KLUDGE@ GL: 				dangerball -root			    \n\

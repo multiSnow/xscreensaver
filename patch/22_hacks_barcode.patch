@@ -1,11 +1,8 @@
-# Parental Advisory :)
-# Make the titles more innocent, for the small children using Debian
-
-Index: xscreensaver-git/hacks/barcode.c
-===================================================================
---- xscreensaver-git.orig/hacks/barcode.c	2016-05-28 19:05:42.729678148 +0200
-+++ xscreensaver-git/hacks/barcode.c	2016-05-28 19:05:42.729678148 +0200
-@@ -118,8 +118,6 @@
+diff --git a/hacks/barcode.c b/hacks/barcode.c
+index 271aad9..8066e4c 100644
+--- a/hacks/barcode.c
++++ b/hacks/barcode.c
+@@ -118,8 +118,6 @@ static const char *words[] =
    "belly",
    "bliss",
    "bogosity",
@@ -14,7 +11,7 @@ Index: xscreensaver-git/hacks/barcode.c
    "booty",
    "bread",
    "bubba",
-@@ -132,7 +130,6 @@
+@@ -132,7 +130,6 @@ static const char *words[] =
    "children",
    "chocolate",
    "CLONE",
@@ -22,7 +19,7 @@ Index: xscreensaver-git/hacks/barcode.c
    "constriction",
    "contrition",
    "cop",
-@@ -172,7 +169,6 @@
+@@ -172,7 +169,6 @@ static const char *words[] =
    "fear",
    "fever",
    "filth",
@@ -30,7 +27,7 @@ Index: xscreensaver-git/hacks/barcode.c
    "fluff",
    "fnord",
    "freedom",
-@@ -189,10 +185,7 @@
+@@ -189,10 +185,7 @@ static const char *words[] =
    "happiness",
    "hate",
    "helplessness",
@@ -41,7 +38,7 @@ Index: xscreensaver-git/hacks/barcode.c
    "hope",
    "hysteria",
    "icepick",
-@@ -266,7 +259,6 @@
+@@ -266,7 +259,6 @@ static const char *words[] =
    "punishment",
    "punk rock",
    "punk",
@@ -49,7 +46,7 @@ Index: xscreensaver-git/hacks/barcode.c
    "quagmire",
    "quarantine",
    "quartz",
-@@ -334,8 +326,6 @@
+@@ -334,8 +326,6 @@ static const char *words[] =
    "vegetarian",
    "venom",
    "verifiability",

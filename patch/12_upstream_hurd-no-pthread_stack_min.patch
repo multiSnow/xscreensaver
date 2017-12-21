@@ -1,14 +1,8 @@
-#
-# To be sent upstream (jwz) after verification
-#
-# PTHREAD_STACK_MIN is not defined on GNU/Hurd
-# http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=823049
-#
-Index: xscreensaver-git/utils/thread_util.c
-===================================================================
---- xscreensaver-git.orig/utils/thread_util.c	2016-05-07 23:25:54.144471652 +0200
-+++ xscreensaver-git/utils/thread_util.c	2016-05-07 23:27:27.668767526 +0200
-@@ -960,7 +960,7 @@
+diff --git a/utils/thread_util.c b/utils/thread_util.c
+index 5ad5d47..71c8633 100644
+--- a/utils/thread_util.c
++++ b/utils/thread_util.c
+@@ -960,7 +960,7 @@ void *io_thread_create(struct io_thread *self, void *parent, void *(*start_routi
  			attr_ptr = &attr;
  			if(pthread_attr_init(&attr))
  				return NULL;

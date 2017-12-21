@@ -1,8 +1,8 @@
-Index: xscreensaver-git/Makefile.in
-===================================================================
---- xscreensaver-git.orig/Makefile.in	2016-12-11 15:04:10.000000000 +0100
-+++ xscreensaver-git/Makefile.in	2016-12-11 15:05:25.734072018 +0100
-@@ -7,7 +7,7 @@
+diff --git a/Makefile.in b/Makefile.in
+index 17c698d..2e0117a 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -7,7 +7,7 @@ VPATH		= @srcdir@
  
  SHELL		= /bin/sh
  SUBDIRS 	= utils jwxyz hacks hacks/glx driver po

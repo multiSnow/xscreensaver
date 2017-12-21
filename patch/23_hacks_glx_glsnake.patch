@@ -1,11 +1,8 @@
-# Parental Advisory :)
-# Make the titles more innocent, for the small children using Debian
-
-Index: xscreensaver-git/hacks/glx/glsnake.c
-===================================================================
---- xscreensaver-git.orig/hacks/glx/glsnake.c	2016-05-28 19:05:49.301677806 +0200
-+++ xscreensaver-git/hacks/glx/glsnake.c	2016-05-28 19:05:49.297677807 +0200
-@@ -540,7 +540,7 @@
+diff --git a/hacks/glx/glsnake.c b/hacks/glx/glsnake.c
+index 5f20421..8b2f25c 100644
+--- a/hacks/glx/glsnake.c
++++ b/hacks/glx/glsnake.c
+@@ -540,7 +540,7 @@ static const struct model_s model[] = {
  	PIN, ZERO, RIGHT, RIGHT, ZERO, PIN, PIN, ZERO, PIN, PIN, ZERO,
  	RIGHT, ZERO }
      },
@@ -14,7 +11,7 @@ Index: xscreensaver-git/hacks/glx/glsnake.c
        { RIGHT, RIGHT, PIN, RIGHT, LEFT, RIGHT, PIN, RIGHT, LEFT,
  	RIGHT, PIN, RIGHT, LEFT, RIGHT, PIN, RIGHT, LEFT, RIGHT, PIN,
  	RIGHT, LEFT, RIGHT, PIN, ZERO }
-@@ -565,22 +565,22 @@
+@@ -565,22 +565,22 @@ static const struct model_s model[] = {
  	ZERO, PIN, ZERO, ZERO, ZERO, ZERO, PIN, ZERO, ZERO, ZERO, ZERO,
  	ZERO, ZERO, ZERO }
      },
@@ -41,7 +38,7 @@ Index: xscreensaver-git/hacks/glx/glsnake.c
        { RIGHT, ZERO, ZERO, ZERO, RIGHT, ZERO, ZERO, PIN, ZERO, ZERO,
  	LEFT, ZERO, ZERO, ZERO, LEFT, ZERO, LEFT, PIN, LEFT, PIN, RIGHT,
  	PIN, RIGHT, ZERO }
-@@ -1000,7 +1000,7 @@
+@@ -1000,7 +1000,7 @@ static const struct model_s model[] = {
      { "Parrot",
          { ZERO, ZERO, ZERO, ZERO, RIGHT, RIGHT, ZERO, LEFT, PIN, RIGHT, ZERO, RIGHT, ZERO, RIGHT, ZERO, RIGHT, PIN, LEFT, ZERO, RIGHT, LEFT, ZERO, PIN, ZERO }
      },
