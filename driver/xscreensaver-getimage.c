@@ -1,4 +1,4 @@
-/* xscreensaver, Copyright (c) 2001-2016 by Jamie Zawinski <jwz@jwz.org>
+/* xscreensaver, Copyright (c) 2001-2018 by Jamie Zawinski <jwz@jwz.org>
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -309,6 +309,21 @@ compute_image_scaling (int src_w, int src_h,
   if (verbose_p)
     fprintf (stderr, "%s: displaying %dx%d+%d+%d image at %d,%d in %dx%d.\n",
              progname, src_w, src_h, srcx, srcy, destx, desty, dest_w, dest_h);
+}
+
+
+static void
+colorbars (Screen *screen, Visual *visual, Drawable drawable, Colormap cmap)
+{
+  Pixmap mask = 0;
+  unsigned long *pixels; /* ignored - unfreed */
+  int npixels;
+  Pixmap logo = xscreensaver_logo (screen, visual, drawable, cmap,
+                                   BlackPixelOfScreen (screen),
+                                   &pixels, &npixels, &mask, True);
+  draw_colorbars (screen, visual, drawable, cmap, 0, 0, 0, 0, logo, mask);
+  XFreePixmap (DisplayOfScreen (screen), logo);
+  XFreePixmap (DisplayOfScreen (screen), mask);
 }
 
 
@@ -857,8 +872,7 @@ jpg_error_exit (j_common_ptr cinfo)
 {
   getimg_jpg_error_mgr *err = (getimg_jpg_error_mgr *) cinfo->err;
   cinfo->err->output_message (cinfo);
-  draw_colorbars (err->screen, err->visual, err->drawable, err->cmap,
-                  0, 0, 0, 0);
+  colorbars (err->screen, err->visual, err->drawable, err->cmap);
   XSync (DisplayOfScreen (err->screen), False);
   exit (1);
 }
@@ -1682,8 +1696,7 @@ get_image (Screen *screen,
         if (verbose_p)
           fprintf (stderr, "%s: drawing colorbars.\n", progname);
         XGetWindowAttributes (dpy, window, &xgwa);
-        draw_colorbars (screen, xgwa.visual, drawable, xgwa.colormap,
-                        0, 0, 0, 0);
+        colorbars (screen, xgwa.visual, drawable, xgwa.colormap);
         XSync (dpy, False);
         if (! file_prop) file_prop = "";
 

@@ -1,4 +1,4 @@
-/* xscreensaver, Copyright (c) 1991-2017 Jamie Zawinski <jwz@jwz.org>
+/* xscreensaver, Copyright (c) 1991-2018 Jamie Zawinski <jwz@jwz.org>
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -15,14 +15,17 @@
    Xlib and that do OpenGL-ish things that bear some resemblance to the
    things that Xlib might have done.
 
-   This is the version of jwxyz for Android.  The version used by MacOS
+   This is the version of jwxyz for Android.  The version used by macOS
    and iOS is in jwxyz.m.
  */
 
 /* Be advised, this is all very much a work in progress. */
 
-/* FWIW, at one point macOS 10.x could actually run with 256 colors. It might
-   not be able to do this anymore, though.
+/* There is probably no reason to ever implement indexed-color rendering here,
+   even if many screenhacks still work with PseudoColor.
+   - OpenGL ES 1.1 (Android, iOS) doesn't support indexed color.
+   - macOS only provides indexed color via AGL (now deprecated), not
+     NSOpenGLPixelFormat.
  */
 
 /* TODO:
@@ -102,9 +105,18 @@
 #include "xft.h"
 #include "pow2.h"
 
+#define countof(x) (sizeof((x))/sizeof((*x)))
+
 union color_bytes {
   uint32_t pixel;
   uint8_t bytes[4];
+};
+
+// Use two textures: one for RGBA, one for luminance. Older Android doesn't
+// seem to like it when textures change format.
+enum {
+  texture_rgba,
+  texture_mono
 };
 
 struct jwxyz_Display {
@@ -119,20 +131,20 @@ struct jwxyz_Display {
   /* Bool opengl_core_p */;
   GLenum gl_texture_target;
   
-// #if defined USE_IPHONE
-  GLuint rect_texture; // Also can work on the desktop.
-// #endif
+  GLuint textures[2]; // Also can work on the desktop.
 
   unsigned long window_background;
 
   int gc_function;
   Bool gc_alpha_allowed_p;
+  int gc_clip_x_origin, gc_clip_y_origin;
+  GLuint gc_clip_mask;
 
   // Alternately, there could be one queue per pixmap.
   size_t queue_size, queue_capacity;
   Drawable queue_drawable;
   GLint queue_mode;
-  GLshort *queue_vertex;
+  void *queue_vertex;
   uint32_t *queue_color;
   Bool queue_line_cap;
 };
@@ -140,6 +152,8 @@ struct jwxyz_Display {
 struct jwxyz_GC {
   XGCValues gcv;
   unsigned int depth;
+  GLuint clip_mask;
+  unsigned clip_mask_width, clip_mask_height;
 };
 
 struct jwxyz_linked_point {
@@ -211,6 +225,62 @@ gl_check_ver (const struct gl_version *caps,
 }
 
 #endif
+
+
+static void
+tex_parameters (Display *d, GLuint texture)
+{
+  // TODO: Check for (ARB|EXT|NV)_texture_rectangle. (All three are alike.)
+  // Rectangle textures should be present on OS X with the following exceptions:
+  // - Generic renderer on PowerPC OS X 10.4 and earlier
+  // - ATI Rage 128
+  glBindTexture (d->gl_texture_target, texture);
+  // TODO: This is all somewhere else. Refactor.
+  glTexParameteri (d->gl_texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri (d->gl_texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  // This might be redundant for rectangular textures.
+# ifndef HAVE_JWZGLES
+  const GLint wrap = GL_CLAMP;
+# else  // HAVE_JWZGLES
+  const GLint wrap = GL_CLAMP_TO_EDGE;
+# endif // HAVE_JWZGLES
+
+  // In OpenGL, CLAMP_TO_EDGE is OpenGL 1.2 or GL_SGIS_texture_edge_clamp.
+  // This is always present with OpenGL ES.
+  glTexParameteri (d->gl_texture_target, GL_TEXTURE_WRAP_S, wrap);
+  glTexParameteri (d->gl_texture_target, GL_TEXTURE_WRAP_T, wrap);
+}
+
+static void
+tex_size (Display *dpy, unsigned *tex_w, unsigned *tex_h)
+{
+  if (!dpy->gl_texture_npot_p) {
+    *tex_w = to_pow2(*tex_w);
+    *tex_h = to_pow2(*tex_h);
+  }
+}
+
+static void
+tex_image (Display *dpy, GLenum internalformat,
+           unsigned *tex_w, unsigned *tex_h, GLenum format, GLenum type,
+           const void *data)
+{
+  unsigned w = *tex_w, h = *tex_h;
+  tex_size (dpy, tex_w, tex_h);
+
+  // TODO: Would using glTexSubImage2D exclusively be faster?
+  if (*tex_w == w && *tex_h == h) {
+    glTexImage2D (dpy->gl_texture_target, 0, internalformat, *tex_w, *tex_h,
+                  0, format, type, data);
+  } else {
+    // TODO: Sampling the last row might be a problem if src_x != 0.
+    glTexImage2D (dpy->gl_texture_target, 0, internalformat, *tex_w, *tex_h,
+                  0, format, type, NULL);
+    glTexSubImage2D (dpy->gl_texture_target, 0, 0, 0, w, h,
+                     format, type, data);
+  }
+}
 
 
 extern const struct jwxyz_vtbl gl_vtbl;
@@ -294,19 +364,24 @@ jwxyz_gl_make_display (Window w)
   Visual *v = &d->visual;
   v->class      = TrueColor;
   if (d->pixel_format == GL_BGRA_EXT) {
-    v->rgba_masks[0] = 0x00ff0000;
-    v->rgba_masks[1] = 0x0000ff00;
-    v->rgba_masks[2] = 0x000000ff;
-    v->rgba_masks[3] = 0xff000000;
+    v->red_mask   = 0x00ff0000;
+    v->green_mask = 0x0000ff00;
+    v->blue_mask  = 0x000000ff;
+    v->alpha_mask = 0xff000000;
   } else {
     Assert(d->pixel_format == GL_RGBA,
            "jwxyz_gl_make_display: Unknown pixel_format");
+    unsigned long masks[4];
     for (unsigned i = 0; i != 4; ++i) {
       union color_bytes color;
       color.pixel = 0;
       color.bytes[i] = 0xff;
-      v->rgba_masks[i] = color.pixel;
+      masks[i] = color.pixel;
     }
+    v->red_mask   = masks[0];
+    v->green_mask = masks[1];
+    v->blue_mask  = masks[2];
+    v->alpha_mask = masks[3];
   }
 
   d->timers_data = jwxyz_sources_init (XtDisplayToApplicationContext (d));
@@ -314,38 +389,36 @@ jwxyz_gl_make_display (Window w)
   d->window_background = BlackPixel(d,0);
 
   d->main_window = w;
+
   {
-    GLint max_texture_size;
+    GLint max_texture_size, max_texture_units;
     glGetIntegerv (GL_MAX_TEXTURE_SIZE, &max_texture_size);
-    Log ("GL_MAX_TEXTURE_SIZE: %d\n", max_texture_size);
+    glGetIntegerv (GL_MAX_TEXTURE_UNITS, &max_texture_units);
+    Log ("GL_MAX_TEXTURE_SIZE: %d, GL_MAX_TEXTURE_UNITS: %d\n",
+         max_texture_size, max_texture_units);
+
+    // OpenGL ES 1.1 and OpenGL 1.3 both promise at least 2 texture units:
+    // OpenGL (R) ES Common/Common-Lite Profile Specification, Version 1.1.12 (Full Specification)
+    // https://www.khronos.org/registry/OpenGL/specs/es/1.1/es_full_spec_1.1.pdf
+    // * Table 6.22. Implementation Dependent Values
+    // * D.2 Enhanced Texture Processing
+    // (OpenGL 1.2 provides multitexturing as an ARB extension, and requires 1
+    // texture unit only.)
+
+    // ...but the glGet reference page contradicts this, and says there can be
+    // just one.
+    // https://www.khronos.org/registry/OpenGL-Refpages/es1.1/xhtml/glGet.xml
   }
- 
-  // In case a GL hack wants to use X11 to draw offscreen, the rect_texture is available.
-  Assert (d->main_window == w, "Uh-oh.");
-  glGenTextures (1, &d->rect_texture);
-  // TODO: Check for (ARB|EXT|NV)_texture_rectangle. (All three are alike.)
-  // Rectangle textures should be present on OS X with the following exceptions:
-  // - Generic renderer on PowerPC OS X 10.4 and earlier
-  // - ATI Rage 128
-  glBindTexture (d->gl_texture_target, d->rect_texture);
-  // TODO: This is all somewhere else. Refactor.
-  glTexParameteri (d->gl_texture_target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri (d->gl_texture_target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-  // This might be redundant for rectangular textures.
-# ifndef HAVE_JWZGLES
-  const GLint wrap = GL_CLAMP;
-# else  // HAVE_JWZGLES
-  const GLint wrap = GL_CLAMP_TO_EDGE;
-# endif // HAVE_JWZGLES
+  glGenTextures (countof (d->textures), d->textures);
 
-  // In OpenGL, CLAMP_TO_EDGE is OpenGL 1.2 or GL_SGIS_texture_edge_clamp.
-  // This is always present with OpenGL ES.
-  glTexParameteri (d->gl_texture_target, GL_TEXTURE_WRAP_S, wrap);
-  glTexParameteri (d->gl_texture_target, GL_TEXTURE_WRAP_T, wrap);
+  for (unsigned i = 0; i != countof (d->textures); i++) {
+    tex_parameters (d, d->textures[i]);
+  }
 
   d->gc_function = GXcopy;
   d->gc_alpha_allowed_p = False;
+  d->gc_clip_mask = 0;
 
   jwxyz_assert_display(d);
   return d;
@@ -354,6 +427,8 @@ jwxyz_gl_make_display (Window w)
 void
 jwxyz_gl_free_display (Display *dpy)
 {
+  Assert (dpy->vtbl == &gl_vtbl, "jwxyz-gl.c: bad vtable");
+
   /* TODO: Go over everything. */
 
   free (dpy->queue_vertex);
@@ -370,6 +445,8 @@ jwxyz_gl_free_display (Display *dpy)
 void
 jwxyz_window_resized (Display *dpy)
 {
+  Assert (dpy->vtbl == &gl_vtbl, "jwxyz-gl.c: bad vtable");
+
   const XRectangle *new_frame = jwxyz_frame (dpy->main_window);
   unsigned new_width = new_frame->width;
   unsigned new_height = new_frame->height;
@@ -434,7 +511,7 @@ visual (Display *dpy)
 
    All drawing functions:
    function                                | glLogicOp w/ GL_COLOR_LOGIC_OP
-   clip_x_origin, clip_y_origin, clip_mask | Stencil mask
+   clip_x_origin, clip_y_origin, clip_mask | Multitexturing w/ GL_TEXTURE1
 
    Shape drawing functions:
    foreground, background                  | glColor*
@@ -466,12 +543,17 @@ visual (Display *dpy)
    subwindow_mode
  */
 
-static GLshort *
-enqueue (Display *dpy, Drawable d, GC gc, int mode, size_t count)
+static void *
+enqueue (Display *dpy, Drawable d, GC gc, int mode, size_t count,
+         unsigned long pixel)
 {
   if (dpy->queue_size &&
-      (dpy->gc_function != gc->gcv.function ||
+      (!gc || /* Could allow NULL GCs here... */
+       dpy->gc_function != gc->gcv.function ||
        dpy->gc_alpha_allowed_p != gc->gcv.alpha_allowed_p ||
+       dpy->gc_clip_mask != gc->clip_mask ||
+       dpy->gc_clip_x_origin != gc->gcv.clip_x_origin ||
+       dpy->gc_clip_y_origin != gc->gcv.clip_y_origin ||
        dpy->queue_mode != mode ||
        dpy->queue_drawable != d)) {
     jwxyz_gl_flush (dpy);
@@ -479,6 +561,15 @@ enqueue (Display *dpy, Drawable d, GC gc, int mode, size_t count)
 
   jwxyz_bind_drawable (dpy, dpy->main_window, d);
   jwxyz_gl_set_gc (dpy, gc);
+
+  if (mode == GL_TRIANGLE_STRIP)
+    Assert (count, "empty triangle strip");
+  // Use degenerate triangles to cut down on draw calls.
+  Bool prepend2 = mode == GL_TRIANGLE_STRIP && dpy->queue_size;
+
+  // ####: Primitive restarts should be used here when (if) they're available.
+  if (prepend2)
+    count += 2;
 
   // TODO: Use glColor when we can get away with it.
   size_t old_size = dpy->queue_size;
@@ -488,8 +579,12 @@ enqueue (Display *dpy, Drawable d, GC gc, int mode, size_t count)
 
     uint32_t *new_color = realloc (
       dpy->queue_color, sizeof(*dpy->queue_color) * dpy->queue_capacity);
+    /* Allocate vertices as if they were always GLfloats. Otherwise, if
+       queue_vertex is allocated to hold GLshorts, then things get switched
+       to GLfloats, queue_vertex would be too small for the given capacity.
+     */
     GLshort *new_vertex = realloc (
-      dpy->queue_vertex, sizeof(*dpy->queue_vertex) * 2 * dpy->queue_capacity);
+      dpy->queue_vertex, sizeof(GLfloat) * 2 * dpy->queue_capacity);
 
     if (!new_color || !new_vertex)
       return NULL;
@@ -502,19 +597,61 @@ enqueue (Display *dpy, Drawable d, GC gc, int mode, size_t count)
   dpy->queue_drawable = d;
 
   union color_bytes color;
-  // TODO: validate color
-  JWXYZ_QUERY_COLOR (dpy, gc->gcv.foreground, 0xffull, color.bytes);
+
+  // Like query_color, but for bytes.
+  jwxyz_validate_pixel (dpy, pixel, jwxyz_drawable_depth (d),
+                        gc ? gc->gcv.alpha_allowed_p : False);
+
+  if (jwxyz_drawable_depth (d) == 1) {
+    uint8_t b = pixel ? 0xff : 0;
+    color.bytes[0] = b;
+    color.bytes[1] = b;
+    color.bytes[2] = b;
+    color.bytes[3] = 0xff;
+  } else {
+    JWXYZ_QUERY_COLOR (dpy, pixel, 0xffull, color.bytes);
+  }
+
   for (size_t i = 0; i != count; ++i) // TODO: wmemset when applicable.
     dpy->queue_color[i + old_size] = color.pixel;
 
-  return dpy->queue_vertex + old_size * 2;
+  void *result = (char *)dpy->queue_vertex + old_size * 2 *
+    (mode == GL_TRIANGLE_STRIP ? sizeof(GLfloat) : sizeof(GLshort));
+  if (prepend2) {
+    dpy->queue_color[old_size] = dpy->queue_color[old_size - 1];
+    result = (GLfloat *)result + 4;
+  }
+  return result;
 }
 
 
 static void
-set_clip_mask (GC gc)
+finish_triangle_strip (Display *dpy, GLfloat *enqueue_result)
 {
-  Assert (!gc->gcv.clip_mask, "set_clip_mask: TODO");
+  if (enqueue_result != dpy->queue_vertex) {
+    enqueue_result[-4] = enqueue_result[-6];
+    enqueue_result[-3] = enqueue_result[-5];
+    enqueue_result[-2] = enqueue_result[0];
+    enqueue_result[-1] = enqueue_result[1];
+  }
+}
+
+
+static void
+query_color (Display *dpy, unsigned long pixel, unsigned int depth,
+             Bool alpha_allowed_p, GLfloat *rgba)
+{
+  jwxyz_validate_pixel (dpy, pixel, depth, alpha_allowed_p);
+
+  if (depth == 1) {
+    GLfloat f = pixel;
+    rgba[0] = f;
+    rgba[1] = f;
+    rgba[2] = f;
+    rgba[3] = 1;
+  } else {
+    JWXYZ_QUERY_COLOR (dpy, pixel, 1.0f, rgba);
+  }
 }
 
 
@@ -522,16 +659,9 @@ static void
 set_color (Display *dpy, unsigned long pixel, unsigned int depth,
            Bool alpha_allowed_p)
 {
-  jwxyz_validate_pixel (dpy, pixel, depth, alpha_allowed_p);
-
-  if (depth == 1) {
-    GLfloat f = pixel;
-    glColor4f (f, f, f, 1);
-  } else {
-    GLfloat rgba[4];
-    JWXYZ_QUERY_COLOR (dpy, pixel, 1.0f, rgba);
-    glColor4f (rgba[0], rgba[1], rgba[2], rgba[3]);
-  }
+  GLfloat rgba[4];
+  query_color (dpy, pixel, depth, alpha_allowed_p, rgba);
+  glColor4f (rgba[0], rgba[1], rgba[2], rgba[3]);
 }
 
 /* Pushes a GC context; sets Function and ClipMask. */
@@ -540,16 +670,17 @@ jwxyz_gl_set_gc (Display *dpy, GC gc)
 {
   int function;
   Bool alpha_allowed_p;
+  GLuint clip_mask;
 
   // GC is NULL for XClearArea and XClearWindow.
   if (gc) {
     function = gc->gcv.function;
-    alpha_allowed_p = gc->gcv.alpha_allowed_p;
-    set_clip_mask (gc);
+    alpha_allowed_p = gc->gcv.alpha_allowed_p || gc->clip_mask;
+    clip_mask = gc->clip_mask;
   } else {
     function = GXcopy;
     alpha_allowed_p = False;
-    // TODO: Set null clip mask for NULL GC here.
+    clip_mask = 0;
   }
 
   /* GL_COLOR_LOGIC_OP: OpenGL 1.1. */
@@ -572,16 +703,54 @@ jwxyz_gl_set_gc (Display *dpy, GC gc)
      widespread.
    */
 
-  if (alpha_allowed_p != dpy->gc_alpha_allowed_p) {
-    dpy->gc_alpha_allowed_p = alpha_allowed_p;
-    if (gc && gc->gcv.alpha_allowed_p) {
-      // TODO: Maybe move glBlendFunc to XCreatePixmap?
-      glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glEnable (GL_BLEND);
-    } else {
-      glDisable (GL_BLEND);
-    }
+  dpy->gc_alpha_allowed_p = alpha_allowed_p;
+  if (alpha_allowed_p || clip_mask) {
+    // TODO: Maybe move glBlendFunc to XCreatePixmap?
+    glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable (GL_BLEND);
+  } else {
+    glDisable (GL_BLEND);
   }
+
+  /* Texture units:
+     GL_TEXTURE0: Texture for XPutImage/XCopyArea (if applicable)
+     GL_TEXTURE1: Texture for clip masks (if applicable)
+   */
+  dpy->gc_clip_mask = clip_mask;
+
+  glActiveTexture (GL_TEXTURE1);
+  if (clip_mask) {
+    glEnable (dpy->gl_texture_target);
+    glBindTexture (dpy->gl_texture_target, gc->clip_mask);
+
+    glTexEnvi (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE,
+               alpha_allowed_p ? GL_MODULATE : GL_REPLACE);
+
+    glMatrixMode (GL_TEXTURE);
+    glLoadIdentity ();
+
+    unsigned
+      tex_w = gc->clip_mask_width + 2, tex_h = gc->clip_mask_height + 2;
+    tex_size (dpy, &tex_w, &tex_h);
+
+# ifndef HAVE_JWZGLES
+    if (dpy->gl_texture_target == GL_TEXTURE_RECTANGLE_EXT)
+    {
+      glScalef (1, -1, 1);
+    }
+    else
+# endif
+    {
+      glScalef (1.0f / tex_w, -1.0f / tex_h, 1);
+    }
+
+    glTranslatef (1 - gc->gcv.clip_x_origin,
+                  1 - gc->gcv.clip_y_origin - (int)gc->clip_mask_height - 2,
+                  0);
+  } else {
+    glDisable (dpy->gl_texture_target);
+  }
+  glActiveTexture (GL_TEXTURE0);
 }
 
 
@@ -641,7 +810,8 @@ DrawPoints (Display *dpy, Drawable d, GC gc,
   short v[2] = {0, 0};
 
   // TODO: XPoints can be fed directly to OpenGL.
-  GLshort *gl_points = enqueue (dpy, d, gc, GL_POINTS, count); // TODO: enqueue returns NULL.
+  GLshort *gl_points = enqueue (dpy, d, gc, GL_POINTS, count,
+                                gc->gcv.foreground); // TODO: enqueue returns NULL.
   for (unsigned i = 0; i < count; i++) {
     next_point (v, points[i], mode);
     gl_points[2 * i] = v[0];
@@ -675,20 +845,26 @@ clear_texture (Display *dpy)
                 0, dpy->pixel_format, gl_pixel_type (dpy), NULL);
 }
 
+
 static void
-set_white (void)
+vertex_pointer (Display *dpy, GLenum type, GLsizei stride,
+                const void *pointer)
 {
-#ifdef HAVE_JWZGLES
-  glColor4f (1, 1, 1, 1);
-#else
-  glColor3ub (0xff, 0xff, 0xff);
-#endif
+  glVertexPointer(2, type, stride, pointer);
+  if (dpy->gc_clip_mask) {
+    glClientActiveTexture (GL_TEXTURE1);
+    glEnableClientState (GL_TEXTURE_COORD_ARRAY);
+    glTexCoordPointer (2, type, stride, pointer);
+    glClientActiveTexture (GL_TEXTURE0);
+  }
 }
 
 
 void
 jwxyz_gl_flush (Display *dpy)
 {
+  Assert (dpy->vtbl == &gl_vtbl, "jwxyz-gl.c: bad vtable");
+
   if (!dpy->queue_size)
     return;
 
@@ -700,7 +876,8 @@ jwxyz_gl_flush (Display *dpy)
 
   // TODO: Use glColor instead of glColorPointer if there's just one color.
   // TODO: Does OpenGL use both GL_COLOR_ARRAY and glColor at the same time?
-  set_white();
+  //       (Probably not.)
+  glColor4f (1, 1, 1, 1);
 
   Bool shifted = dpy->queue_mode == GL_POINTS || dpy->queue_mode == GL_LINES;
   if (shifted) {
@@ -709,7 +886,9 @@ jwxyz_gl_flush (Display *dpy)
   }
 
   glColorPointer (4, GL_UNSIGNED_BYTE, 0, dpy->queue_color);
-  glVertexPointer (2, GL_SHORT, 0, dpy->queue_vertex);
+  vertex_pointer (dpy,
+                  dpy->queue_mode == GL_TRIANGLE_STRIP ? GL_FLOAT : GL_SHORT,
+                  0, dpy->queue_vertex);
   glDrawArrays (dpy->queue_mode, 0, dpy->queue_size);
 
   // TODO: This is right, right?
@@ -717,7 +896,8 @@ jwxyz_gl_flush (Display *dpy)
     Assert (!(dpy->queue_size % 2), "bad count for GL_LINES");
     glColorPointer (4, GL_UNSIGNED_BYTE, sizeof(GLubyte) * 8,
                     dpy->queue_color);
-    glVertexPointer (2, GL_SHORT, sizeof(GLshort) * 4, dpy->queue_vertex + 2);
+    vertex_pointer (dpy, GL_SHORT, sizeof(GLshort) * 4,
+                    (GLshort *)dpy->queue_vertex + 2);
     glDrawArrays (GL_POINTS, 0, dpy->queue_size / 2);
   }
 
@@ -752,7 +932,8 @@ jwxyz_gl_copy_area_read_tex_image (Display *dpy, unsigned src_height,
 
   GLint internalformat = texture_internalformat(dpy);
 
-  glBindTexture (dpy->gl_texture_target, dpy->rect_texture);
+  /* TODO: This probably shouldn't always be texture_rgba. */
+  glBindTexture (dpy->gl_texture_target, dpy->textures[texture_rgba]);
 
   if (tex_w == width && tex_h == height) {
     glCopyTexImage2D (dpy->gl_texture_target, 0, internalformat,
@@ -779,32 +960,47 @@ jwxyz_gl_copy_area_write_tex_image (Display *dpy, GC gc, int src_x, int src_y,
     tex_h = to_pow2(tex_h);
   }
 
-  glBindTexture (dpy->gl_texture_target, dpy->rect_texture);
+  /* Must match what's in jwxyz_gl_copy_area_read_tex_image. */
+  glBindTexture (dpy->gl_texture_target, dpy->textures[texture_rgba]);
 
-  jwxyz_gl_draw_image (dpy->gl_texture_target, tex_w, tex_h, 0, 0,
-                       width, height, dst_x, dst_y);
+  jwxyz_gl_draw_image (dpy, gc, dpy->gl_texture_target, tex_w, tex_h,
+                       0, 0, gc->depth, width, height, dst_x, dst_y, False);
 
   clear_texture (dpy);
 }
 
 
 void
-jwxyz_gl_draw_image (GLenum gl_texture_target,
+jwxyz_gl_draw_image (Display *dpy, GC gc, GLenum gl_texture_target,
                      unsigned int tex_w, unsigned int tex_h,
-                     int src_x, int src_y,
+                     int src_x, int src_y, int src_depth,
                      unsigned int width, unsigned int height,
-                     int dst_x, int dst_y)
+                     int dst_x, int dst_y, Bool flip_y)
 {
-  set_white ();
-  glEnable (gl_texture_target);
+  if (!gc || src_depth == gc->depth) {
+    glTexEnvi (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+  } else {
+    Assert (src_depth == 1 && gc->depth == 32,
+            "jwxyz_gl_draw_image: bad depths");
 
+    set_color (dpy, gc->gcv.background, gc->depth, gc->gcv.alpha_allowed_p);
+
+    GLfloat rgba[4];
+    query_color (dpy, gc->gcv.foreground, gc->depth, gc->gcv.alpha_allowed_p,
+                 rgba);
+    glTexEnvi (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
+    glTexEnvfv (GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, rgba);
+  }
+
+  glEnable (gl_texture_target);
   glEnableClientState (GL_TEXTURE_COORD_ARRAY);
   glEnableClientState (GL_VERTEX_ARRAY);
-    
-  /* TODO: Copied from XPutImage. Refactor. */
+
+  Assert (!glIsEnabled (GL_COLOR_ARRAY), "glIsEnabled (GL_COLOR_ARRAY)");
+  Assert (!glIsEnabled (GL_NORMAL_ARRAY), "glIsEnabled (GL_NORMAL_ARRAY)");
+
   /* TODO: EXT_draw_texture or whatever it's called. */
-  GLfloat vertices[4][2] =
-  {
+  GLfloat vertices[4][2] = {
     {dst_x, dst_y},
     {dst_x, dst_y + height},
     {dst_x + width, dst_y + height},
@@ -812,8 +1008,13 @@ jwxyz_gl_draw_image (GLenum gl_texture_target,
   };
 
   GLfloat
-    tex_x0 = src_x, tex_y0 = src_y + height,
+    tex_x0 = src_x, tex_y0 = src_y,
     tex_x1 = src_x + width, tex_y1 = src_y;
+
+  if (flip_y)
+    tex_y1 += height;
+  else
+    tex_y0 += height;
 
 # ifndef HAVE_JWZGLES
   if (gl_texture_target != GL_TEXTURE_RECTANGLE_EXT)
@@ -826,21 +1027,22 @@ jwxyz_gl_draw_image (GLenum gl_texture_target,
     tex_y1 *= my;
   }
 
-  GLfloat tex_coords[4][2] =
-  {
+  GLfloat tex_coords[4][2] = {
     {tex_x0, tex_y0},
     {tex_x0, tex_y1},
     {tex_x1, tex_y1},
     {tex_x1, tex_y0}
   };
 
-  glVertexPointer (2, GL_FLOAT, 0, vertices);
+  vertex_pointer (dpy, GL_FLOAT, 0, vertices);
   glTexCoordPointer (2, GL_FLOAT, 0, tex_coords);
   glDrawArrays (GL_TRIANGLE_FAN, 0, 4);
 
+//clear_texture();
   glDisable (gl_texture_target);
 }
 
+#if 0
 void
 jwxyz_gl_copy_area_read_pixels (Display *dpy, Drawable src, Drawable dst,
                                 GC gc, int src_x, int src_y,
@@ -851,6 +1053,7 @@ jwxyz_gl_copy_area_read_pixels (Display *dpy, Drawable src, Drawable dst,
   XPutImage (dpy, dst, gc, img, 0, 0, dst_x, dst_y, width, height);
   XDestroyImage (img);
 }
+#endif
 
 
 static int
@@ -882,7 +1085,7 @@ DrawLines (Display *dpy, Drawable d, GC gc, XPoint *points, int count,
   
   glEnableClientState (GL_VERTEX_ARRAY);
   glDisableClientState (GL_TEXTURE_COORD_ARRAY);
-  glVertexPointer (2, GL_SHORT, 0, vertices);
+  vertex_pointer (dpy, GL_SHORT, 0, vertices);
   glDrawArrays (GL_LINE_STRIP, 0, count);
   
   free (vertices);
@@ -890,7 +1093,7 @@ DrawLines (Display *dpy, Drawable d, GC gc, XPoint *points, int count,
   if (gc->gcv.cap_style != CapNotLast) {
     // TODO: How does this look with multisampling?
     // TODO: Disable me for closed loops.
-    glVertexPointer (2, GL_SHORT, 0, p);
+    vertex_pointer (dpy, GL_SHORT, 0, p);
     glDrawArrays (GL_POINTS, 0, 1);
   }
 
@@ -904,7 +1107,9 @@ DrawLines (Display *dpy, Drawable d, GC gc, XPoint *points, int count,
 //
 // TODO: Fix epicycle hack with large thickness, and truchet line segment ends
 //
-static void drawThickLine(int line_width, XSegment *segments)
+static void
+drawThickLine (Display *dpy, Drawable d, GC gc, int line_width,
+               XSegment *segments)
 {
     double dx, dy, di, m, angle;
     int sx1, sx2, sy1, sy2;
@@ -940,19 +1145,17 @@ static void drawThickLine(int line_width, XSegment *segments)
     float x6 = sx2 + wsn;
     float y6 = sy2 - csn;
 
-    GLfloat coords[4][2] =
-    {
-      {x3, y3},
-      {x4, y4},
-      {x6, y6},
-      {x5, y5}
-    };
-
-    glEnableClientState (GL_VERTEX_ARRAY);
-    glVertexPointer (2, GL_FLOAT, 0, coords);
-    jwxyz_assert_gl ();
-    glDrawArrays (GL_TRIANGLE_FAN, 0, 4);
-    jwxyz_assert_gl ();
+    GLfloat *coords = enqueue (dpy, d, gc, GL_TRIANGLE_STRIP, 4,
+                               gc->gcv.foreground);
+    coords[0] = x3;
+    coords[1] = y3;
+    coords[2] = x4;
+    coords[3] = y4;
+    coords[4] = x5;
+    coords[5] = y5;
+    coords[6] = x6;
+    coords[7] = y6;
+    finish_triangle_strip (dpy, coords);
 }
 
 
@@ -963,8 +1166,7 @@ DrawSegments (Display *dpy, Drawable d, GC gc, XSegment *segments, int count)
   /* Thin lines <= 1px are offset by +0.5; thick lines are not. */
 
   if (count == 1 && gc->gcv.line_width > 1) {
-    set_fg_gc (dpy, d, gc);
-    drawThickLine(gc->gcv.line_width,segments);
+    drawThickLine (dpy, d, gc, gc->gcv.line_width, segments);
   }
   else {
     if (dpy->queue_line_cap != (gc->gcv.cap_style != CapNotLast))
@@ -978,8 +1180,8 @@ DrawSegments (Display *dpy, Drawable d, GC gc, XSegment *segments, int count)
             offsetof(XSegment, x2) == 4,
             "XDrawSegments: Data alignment mix-up.");
 
-    memcpy (enqueue(dpy, d, gc, GL_LINES, count * 2), segments,
-            count * sizeof(XSegment));
+    memcpy (enqueue(dpy, d, gc, GL_LINES, count * 2, gc->gcv.foreground),
+            segments, count * sizeof(XSegment));
   }
 
   return 0;
@@ -1013,40 +1215,18 @@ fill_rects (Display *dpy, Drawable d, GC gc,
             const XRectangle *rectangles, unsigned long nrectangles,
             unsigned long pixel)
 {
-  set_color_gc (dpy, d, gc, pixel);
-
-/*
-  glBegin(GL_QUADS);
-  for (unsigned i = 0; i != nrectangles; ++i) {
+  for (unsigned long i = 0; i != nrectangles; ++i) {
     const XRectangle *r = &rectangles[i];
-    glVertex2i(r->x, r->y);
-    glVertex2i(r->x, r->y + r->height);
-    glVertex2i(r->x + r->width, r->y + r->height);
-    glVertex2i(r->x + r->width, r->y);
-  }
-  glEnd();
-*/
-  
-  glEnableClientState (GL_VERTEX_ARRAY);
-  glDisableClientState (GL_TEXTURE_COORD_ARRAY);
-    
-  for (unsigned long i = 0; i != nrectangles; ++i)
-  {
-    const XRectangle *r = &rectangles[i];
-    
-    GLfloat coords[4][2] =
-    {
-      {r->x, r->y},
-      {r->x, r->y + r->height},
-      {r->x + r->width, r->y + r->height},
-      {r->x + r->width, r->y}
-    };
-    
-    // TODO: Several rects at once. Maybe even tune for XScreenSaver workloads.
-    glVertexPointer (2, GL_FLOAT, 0, coords);
-    jwxyz_assert_gl ();
-    glDrawArrays (GL_TRIANGLE_FAN, 0, 4);
-    jwxyz_assert_gl ();
+    GLfloat *coords = enqueue (dpy, d, gc, GL_TRIANGLE_STRIP, 4, pixel);
+    coords[0] = r->x;
+    coords[1] = r->y;
+    coords[2] = r->x;
+    coords[3] = r->y + r->height;
+    coords[4] = r->x + r->width;
+    coords[5] = r->y;
+    coords[6] = r->x + r->width;
+    coords[7] = r->y + r->height;
+    finish_triangle_strip (dpy, coords);
   }
 }
 
@@ -1085,7 +1265,7 @@ FillPolygon (Display *dpy, Drawable d, GC gc,
     glEnableClientState (GL_VERTEX_ARRAY);
     glDisableClientState (GL_TEXTURE_COORD_ARRAY);
 
-    glVertexPointer (2, GL_SHORT, 0, vertices);
+    vertex_pointer (dpy, GL_SHORT, 0, vertices);
     glDrawArrays (GL_TRIANGLE_FAN, 0, npoints);
 
     free(vertices);
@@ -1097,7 +1277,7 @@ FillPolygon (Display *dpy, Drawable d, GC gc,
     linked_point *root;
     root = (linked_point *) malloc( sizeof(linked_point) );
     set_points_list(points,npoints,root);
-    traverse_points_list(root);
+    traverse_points_list(dpy, root);
 
   } else {
     Assert((shape == Convex || shape == Nonconvex),
@@ -1250,7 +1430,7 @@ draw_arc_gl (Display *dpy, Drawable d, GC gc, int x, int y,
   glDisableClientState (GL_TEXTURE_COORD_ARRAY);
   glEnableClientState (GL_VERTEX_ARRAY);
   
-  glVertexPointer (2, GL_FLOAT, 0, data);
+  vertex_pointer (dpy, GL_FLOAT, 0, data);
   glDrawArrays (fill_p ? GL_TRIANGLE_FAN : GL_LINE_STRIP,
                 0,
                 (GLsizei)((data_ptr - data) / 2));
@@ -1311,21 +1491,26 @@ CreateGC (Display *dpy, Drawable d, unsigned long mask, XGCValues *xgcv)
 }
 
 
+static void
+free_clip_mask (Display *dpy, GC gc)
+{
+  if (gc->gcv.clip_mask) {
+    if (dpy->gc_clip_mask == gc->clip_mask) {
+      jwxyz_gl_flush (dpy);
+      dpy->gc_clip_mask = 0;
+    }
+    glDeleteTextures (1, &gc->clip_mask);
+  }
+}
+
+
 static int
 FreeGC (Display *dpy, GC gc)
 {
   if (gc->gcv.font)
     XUnloadFont (dpy, gc->gcv.font);
 
-  // TODO
-/*
-  Assert (!!gc->gcv.clip_mask == !!gc->clip_mask, "GC clip mask mixup");
-
-  if (gc->gcv.clip_mask) {
-    XFreePixmap (dpy, gc->gcv.clip_mask);
-    CGImageRelease (gc->clip_mask);
-  }
-*/
+  free_clip_mask (dpy, gc);
   free (gc);
   return 0;
 }
@@ -1394,6 +1579,7 @@ PutImage (Display *dpy, Drawable d, GC gc, XImage *ximage,
   unsigned src_w;
   GLint tex_internalformat;
   GLenum tex_format, tex_type;
+  unsigned tex_index;
 
   if (bpp == 32) {
     tex_data = ximage->data + src_y * bpl + (src_x * 4);
@@ -1406,6 +1592,7 @@ PutImage (Display *dpy, Drawable d, GC gc, XImage *ximage,
     tex_internalformat = texture_internalformat(dpy);
     tex_format = dpy->pixel_format;
     tex_type = gl_pixel_type(dpy);
+    tex_index = texture_rgba;
 
     /* GL_UNPACK_ROW_LENGTH is not allowed to be negative. (sigh) */
 # ifndef HAVE_JWZGLES
@@ -1416,8 +1603,6 @@ PutImage (Display *dpy, Drawable d, GC gc, XImage *ximage,
 # endif
 
     // glPixelStorei (GL_UNPACK_ALIGNMENT, 4); // Probably unnecessary.
-
-    set_white ();
   } else {
     Assert (bpp == 1, "expected 1 or 32 bpp");
     Assert ((src_x % 8) == 0,
@@ -1430,6 +1615,27 @@ PutImage (Display *dpy, Drawable d, GC gc, XImage *ximage,
 
     tex_data = malloc(src_w * h);
 
+#if 0
+    {
+      char s[10240];
+      int x, y, o;
+      Log("#PI ---------- %d %d %08lx %08lx",
+          jwxyz_drawable_depth(d), ximage->depth,
+          (unsigned long)d, (unsigned long)ximage);
+      for (y = 0; y < ximage->height; y++) {
+        o = 0;
+        for (x = 0; x < ximage->width; x++) {
+          unsigned long b = XGetPixel(ximage, x, y);
+          s[o++] = (   (b & 0xFF000000)
+                    ? ((b & 0x00FFFFFF) ? '#' : '-')
+                    : ((b & 0x00FFFFFF) ? '+' : ' '));
+        }
+        s[o] = 0;
+        Log("#PI [%s]",s);
+      }
+      Log("# PI ----------");
+    }
+#endif
     uint32_t *data_out = (uint32_t *)tex_data;
     for(unsigned y = h; y; --y) {
       for(unsigned x = 0; x != w8; ++x) {
@@ -1448,15 +1654,32 @@ PutImage (Display *dpy, Drawable d, GC gc, XImage *ximage,
       src_data += bpl;
       data_out += src_w / 4;
     }
+#if 0
+    {
+      char s[10240];
+      int x, y, o;
+      Log("#P2 ----------");
+      for (y = 0; y < ximage->height; y++) {
+        o = 0;
+        for (x = 0; x < ximage->width; x++) {
+          unsigned long b = ((uint8_t *)tex_data)[y * w + x];
+          s[o++] = (   (b & 0xFF000000)
+                    ? ((b & 0x00FFFFFF) ? '#' : '-')
+                    : ((b & 0x00FFFFFF) ? '+' : ' '));
+        }
+        s[o] = 0;
+        Log("#P2 [%s]",s);
+      }
+      Log("# P2 ----------");
+    }
+#endif
 
     tex_internalformat = GL_LUMINANCE;
     tex_format = GL_LUMINANCE;
     tex_type = GL_UNSIGNED_BYTE;
+    tex_index = texture_mono;
 
     // glPixelStorei (GL_UNPACK_ALIGNMENT, 1);
-
-    set_color (dpy, gc->gcv.foreground, gc->depth, gc->gcv.alpha_allowed_p);
-    // TODO: Deal with the background color.
   }
 
 # if 1 // defined HAVE_JWZGLES
@@ -1464,80 +1687,19 @@ PutImage (Display *dpy, Drawable d, GC gc, XImage *ximage,
   // TODO: Make use of OES_draw_texture.
 
   unsigned tex_w = src_w, tex_h = h;
-  if (!dpy->gl_texture_npot_p) {
-    tex_w = to_pow2(tex_w);
-    tex_h = to_pow2(tex_h);
-  }
-
-  glBindTexture (dpy->gl_texture_target, dpy->rect_texture);
+  glBindTexture (dpy->gl_texture_target, dpy->textures[tex_index]);
 
   // A fun project: reimplement xshm.c by means of a PBO using
   // GL_MAP_UNSYNCHRONIZED_BIT.
 
-  // TODO: Would using glTexSubImage2D exclusively be faster?
-  if (tex_w == src_w && tex_h == h) {
-    glTexImage2D (dpy->gl_texture_target, 0, tex_internalformat, tex_w, tex_h,
-                  0, tex_format, tex_type, tex_data);
-  } else {
-    // TODO: Sampling the last row might be a problem if src_x != 0.
-    glTexImage2D (dpy->gl_texture_target, 0, tex_internalformat, tex_w, tex_h,
-                  0, tex_format, tex_type, NULL);
-    glTexSubImage2D (dpy->gl_texture_target, 0, 0, 0, src_w, h,
-                     tex_format, tex_type, tex_data);
-  }
+  tex_image (dpy, tex_internalformat, &tex_w, &tex_h, tex_format, tex_type,
+             tex_data);
 
   if (bpp == 1)
     free(tex_data);
 
-  // TODO: This looks a lot like jwxyz_gl_draw_image. Refactor.
-
-  // glEnable (dpy->gl_texture_target);
-  // glColor4f (0.5, 0, 1, 1);
-  glEnable (dpy->gl_texture_target);
-  glEnableClientState (GL_VERTEX_ARRAY);
-  glEnableClientState (GL_TEXTURE_COORD_ARRAY);
-
-  // TODO: Why are these ever turned on in the first place?
-  glDisableClientState (GL_COLOR_ARRAY);
-  glDisableClientState (GL_NORMAL_ARRAY);
-  // glDisableClientState (GL_TEXTURE_COORD_ARRAY);
-
-  GLfloat vertices[4][2] =
-  {
-    {dest_x, dest_y},
-    {dest_x, dest_y + h},
-    {dest_x + w, dest_y + h},
-    {dest_x + w, dest_y}
-  };
-
-  GLfloat texcoord_w, texcoord_h;
-#  ifndef HAVE_JWZGLES
-  if (dpy->gl_texture_target == GL_TEXTURE_RECTANGLE_EXT) {
-    texcoord_w = w;
-    texcoord_h = h;
-  } else
-#  endif /* HAVE_JWZGLES */
-  {
-    texcoord_w = (double)w / tex_w;
-    texcoord_h = (double)h / tex_h;
-  }
-
-  GLfloat tex_coords[4][2];
-  tex_coords[0][0] = 0;
-  tex_coords[0][1] = 0;
-  tex_coords[1][0] = 0;
-  tex_coords[1][1] = texcoord_h;
-  tex_coords[2][0] = texcoord_w;
-  tex_coords[2][1] = texcoord_h;
-  tex_coords[3][0] = texcoord_w;
-  tex_coords[3][1] = 0;
-
-  glVertexPointer (2, GL_FLOAT, 0, vertices);
-  glTexCoordPointer (2, GL_FLOAT, 0, tex_coords);
-  glDrawArrays (GL_TRIANGLE_FAN, 0, 4);
-
-//clear_texture();
-  glDisable (dpy->gl_texture_target);
+  jwxyz_gl_draw_image (dpy, gc, dpy->gl_texture_target, tex_w, tex_h,
+                       0, 0, bpp, w, h, dest_x, dest_y, True);
 # else
   glRasterPos2i (dest_x, dest_y);
   glPixelZoom (1, -1);
@@ -1616,63 +1778,151 @@ GetSubImage (Display *dpy, Drawable d, int x, int y,
     }
   } else {
 
-    /* TODO: Actually get pixels. */
+    uint32_t *rgba_image = malloc(width * height * 4);
+    Assert (rgba_image, "not enough memory");
+
+    // Must be GL_RGBA; GL_RED isn't available.
+    glReadPixels (x, jwxyz_frame (d)->height - (y + height), width, height,
+                  GL_RGBA, GL_UNSIGNED_BYTE, rgba_image);
 
     Assert (!(dest_x % 8), "XGetSubImage: dest_x not byte-aligned");
-    uint8_t *dest_data =
+    uint8_t *top =
       (uint8_t *)dest_image->data + dest_image->bytes_per_line * dest_y
       + dest_x / 8;
-    for (unsigned y = height / 2; y; --y) {
-      memset (dest_data, y & 1 ? 0x55 : 0xAA, width / 8);
-      dest_data += dest_image->bytes_per_line;
+#if 0
+    {
+      char s[10240];
+      Log("#GI ---------- %d %d  %d x %d %08lx", 
+          jwxyz_drawable_depth(d), dest_image->depth,
+          width, height,
+          (unsigned long) d);
+      for (int y = 0; y < height; y++) {
+        int x;
+        for (x = 0; x < width; x++) {
+          unsigned long b = rgba_image[(height-y-1) * width + x];
+          s[x] = (   (b & 0xFF000000)
+                  ? ((b & 0x00FFFFFF) ? '#' : '-')
+                  : ((b & 0x00FFFFFF) ? '+' : ' '));
+        }
+        s[x] = 0;
+        Log("#GI [%s]",s);
+      }
+      Log("#GI ----------");
     }
+#endif
+    const uint32_t *bottom = rgba_image + width * (height - 1);
+    for (unsigned y = height; y; --y) {
+      memset (top, 0, width / 8);
+      for (unsigned x = 0; x != width; ++x) {
+        if (bottom[x] & 0x80)
+          top[x >> 3] |= (1 << (x & 7));
+      }
+      top += dest_image->bytes_per_line;
+      bottom -= width;
+    }
+
+    free (rgba_image);
   }
 
   return dest_image;
 }
 
 
-#if 0
-static Pixmap
-copy_pixmap (Display *dpy, Pixmap p)
-{
-  if (!p) return 0;
-  Assert (p->type == PIXMAP, "not a pixmap");
-
-  Pixmap p2 = 0;
-
-  Window root;
-  int x, y;
-  unsigned int width, height, border_width, depth;
-  if (XGetGeometry (dpy, p, &root,
-                    &x, &y, &width, &height, &border_width, &depth)) {
-    XGCValues gcv;
-    gcv.function = GXcopy;
-    GC gc = XCreateGC (dpy, p, GCFunction, &gcv);
-    if (gc) {
-      p2 = XCreatePixmap (dpy, p, width, height, depth);
-      if (p2)
-        XCopyArea (dpy, p, p2, gc, 0, 0, width, height, 0, 0);
-      XFreeGC (dpy, gc);
-    }
-  }
-
-  Assert (p2, "could not copy pixmap");
-
-  return p2;
-}
-#endif
-
-
 static int
 SetClipMask (Display *dpy, GC gc, Pixmap m)
 {
-  Log ("TODO: No clip masks yet");
-  /* Protip: Do glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-     clearing just the stencil buffer in a packed depth/stencil arrangement is
-     slower than the above. Adreno recommends this, but other GPUs probably
-     benefit as well.
+  Assert (m != dpy->main_window, "not a pixmap");
+
+  free_clip_mask (dpy, gc);
+
+  if (!m) {
+    gc->clip_mask = 0;
+    return 0;
+  }
+
+  Assert (jwxyz_drawable_depth (m) == 1, "wrong depth for clip mask");
+
+  const XRectangle *frame = jwxyz_frame (m);
+  gc->clip_mask_width = frame->width;
+  gc->clip_mask_height = frame->height;
+
+  /* Apparently GL_ALPHA isn't a valid format for a texture used in an FBO:
+
+    (86) Are any one- or two- component formats color-renderable?
+
+            Presently none of the one- or two- component texture formats
+            defined in unextended OpenGL is color-renderable.  The R
+            and RG float formats defined by the NV_float_buffer
+            extension are color-renderable.
+
+            Although an early draft of the FBO specification permitted
+            rendering into alpha, luminance, and intensity formats, this
+            this capability was pulled when it was realized that it was
+            under-specified exactly how rendering into these formats
+            would work.  (specifically, how R/G/B/A map to I/L/A)
+
+     <https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_framebuffer_object.txt>
+
+     ...Therefore, 1-bit drawables get to have wasted color channels.
+     Currently, R=G=B=grey, and the alpha channel is unused.
    */
+
+  /* There doesn't seem to be any way to move what's on one of the color
+     channels to the alpha channel in GLES 1.1 without leaving the GPU.
+   */
+
+  /* GLES 1.1 only supports GL_CLAMP_TO_EDGE or GL_REPEAT for
+     GL_TEXTURE_WRAP_S and GL_TEXTURE_WRAP_T, so to prevent drawing outside
+     the clip mask pixmap, there's two options:
+     1. Use glScissor.
+     2. Add a black border.
+
+     Option #2 is in use here.
+
+     The following converts in-place an RGBA image to alpha-only image with a
+     1px black border.
+   */
+
+  // Prefix/suffix: 1 row+1 pixel, rounded to nearest int32.
+  size_t pad0 = frame->width + 3, pad = (pad0 + 3) & ~3;
+  uint8_t *data = malloc(2 * pad + frame->width * frame->height * 4);
+
+  uint8_t *rgba = data + pad;
+  uint8_t *alpha = rgba;
+  uint8_t *alpha0 = alpha - pad0;
+  memset (alpha0, 0, pad0); // Top row.
+
+  jwxyz_gl_flush (dpy);
+  jwxyz_bind_drawable (dpy, dpy->main_window, m);
+  glReadPixels (0, 0, frame->width, frame->height, GL_RGBA, GL_UNSIGNED_BYTE,
+                rgba);
+
+  for (unsigned y = 0; y != frame->height; ++y) {
+    for (unsigned x = 0; x != frame->width; ++x)
+      alpha[x] = rgba[x * 4];
+
+    rgba += frame->width * 4;
+
+    alpha += frame->width;
+    alpha[0] = 0;
+    alpha[1] = 0;
+    alpha += 2;
+  }
+
+  alpha -= 2;
+  memset (alpha, 0, pad0); // Bottom row.
+
+  glGenTextures (1, &gc->clip_mask);
+  tex_parameters (dpy, gc->clip_mask);
+
+  glPixelStorei (GL_UNPACK_ALIGNMENT, 1);
+
+  unsigned tex_w = frame->width + 2, tex_h = frame->height + 2;
+  tex_image (dpy, GL_ALPHA, &tex_w, &tex_h, GL_ALPHA, GL_UNSIGNED_BYTE,
+             alpha0);
+
+  free(data);
+
   return 0;
 }
 
@@ -1753,7 +2003,7 @@ Bool is_same_slope(linked_point * a)
     return aa == bb;
 }
 
-void draw_three_vertices(linked_point * a, Bool triangle)
+void draw_three_vertices(Display *dpy, linked_point * a, Bool triangle)
 {
 
     linked_point *b;
@@ -1776,7 +2026,7 @@ void draw_three_vertices(linked_point * a, Bool triangle)
     }
 
     glEnableClientState(GL_VERTEX_ARRAY);
-    glVertexPointer(2, GL_FLOAT, 0, vertices);
+    vertex_pointer(dpy, GL_FLOAT, 0, vertices);
     glDrawArrays(drawType, 0, 3);
 
     free(b);  // cut midpoint off from remaining polygon vertex list
@@ -1813,16 +2063,16 @@ Bool is_three_point_loop(linked_point * head)
 }
 
 
-void traverse_points_list(linked_point * root)
+void traverse_points_list(Display *dpy, linked_point * root)
 {
     linked_point *head;
     head = root;
 
     while (!is_three_point_loop(head)) {
         if (is_an_ear(head)) {
-            draw_three_vertices(head, True);
+            draw_three_vertices(dpy, head, True);
         } else if (is_same_slope(head)) {
-            draw_three_vertices(head, False);
+            draw_three_vertices(dpy, head, False);
         } else {
             head = head->next;
         }
@@ -1830,9 +2080,9 @@ void traverse_points_list(linked_point * root)
 
     // handle final three vertices in polygon
     if (is_an_ear(head)) {
-        draw_three_vertices(head, True);
+        draw_three_vertices(dpy, head, True);
     } else if (is_same_slope(head)) {
-        draw_three_vertices(head, False);
+        draw_three_vertices(dpy, head, False);
     } else {
         free(head->next->next);
         free(head->next);

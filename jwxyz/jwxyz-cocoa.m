@@ -1,4 +1,4 @@
-/* xscreensaver, Copyright (c) 1991-2017 Jamie Zawinski <jwz@jwz.org>
+/* xscreensaver, Copyright (c) 1991-2018 Jamie Zawinski <jwz@jwz.org>
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -459,6 +459,8 @@ jwxyz_load_native_font (Window main_window, int traits_jwxyz, int mask_jwxyz,
     }
   }
 
+  [font_name release];
+
   if (nsfont)
   {
     if (family_name_ret)
@@ -568,6 +570,7 @@ jwxyz_get_pos (Window w, XPoint *xvpos, XPoint *xp)
 # if (MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_6)
   NSRect rr1 = [w->window.view convertRect: NSMakeRect(0,0,0,0) toView:nil];
   NSRect rr2 = [nsw convertRectToScreen: rr1];
+
   NSPoint wpos = NSMakePoint (rr2.origin.x - rr1.origin.x,
                               rr2.origin.y - rr1.origin.y);
 # else
@@ -586,7 +589,8 @@ jwxyz_get_pos (Window w, XPoint *xvpos, XPoint *xp)
   vpos.y += wpos.y;
 
   // get top left of view on screen, from bottom left
-  vpos.y += w->frame.height;
+  double s = [w->window.view hackedContentScaleFactor];
+  vpos.y += w->frame.height / s;
 
   // get top left of view on screen, from top left
   NSArray *screens = [NSScreen screens];

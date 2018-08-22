@@ -1,4 +1,4 @@
-/* tessellimage, Copyright (c) 2014 Jamie Zawinski <jwz@jwz.org>
+/* tessellimage, Copyright (c) 2014-2018 Jamie Zawinski <jwz@jwz.org>
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -11,9 +11,6 @@
 
 #include "screenhack.h"
 #include "delaunay.h"
-
-#undef DO_VORONOI
-
 
 #ifndef HAVE_JWXYZ
 # define XK_MISCELLANY
@@ -31,7 +28,7 @@ struct state {
   int delay;
   Bool outline_p, cache_p, fill_p;
   double duration, duration2;
-  int max_depth;
+  int max_depth, max_resolution;
   double start_time, start_time2;
 
   XImage *img, *delta;
@@ -43,7 +40,19 @@ struct state {
   async_load_state *img_loader;
   XRectangle geom;
   Bool button_down_p;
+  enum { DELAUNAY, VORONOI } mode;
 };
+
+typedef struct {
+  int npoints;
+  XPoint ctr;
+  XPoint *p;
+} voronoi_polygon;
+
+typedef struct {
+  XPoint p;
+  double slope;
+} voronoi_pa;
 
 
 /* Returns the current time in seconds as a double.
@@ -82,6 +91,10 @@ tessellimage_init (Display *dpy, Window window)
 
   st->max_depth = get_integer_resource (st->dpy, "maxDepth", "MaxDepth");
   if (st->max_depth < 100) st->max_depth = 100;
+
+  st->max_resolution = get_integer_resource (st->dpy,
+                                             "maxResolution", "MaxResolution");
+  if (st->max_resolution < 0) st->max_resolution = 0;
 
   st->duration = get_float_resource (st->dpy, "duration", "Seconds");
   if (st->duration < 1) st->duration = 1;
@@ -272,6 +285,23 @@ analyze (struct state *st)
   unsigned int w, h, bw, d;
   unsigned long histo[256];
 
+  {
+    char *s = get_string_resource (st->dpy, "mode", "Mode");
+    if (!s || !*s || !strcasecmp(s, "random"))
+      st->mode = (random() & 1) ? DELAUNAY : VORONOI;
+    else if (!strcasecmp(s, "delaunay"))
+      st->mode = DELAUNAY;
+    else if (!strcasecmp(s, "voronoi"))
+      st->mode = VORONOI;
+    else
+      {
+        fprintf (stderr, 
+                 "%s: mode must be delaunay, voronoi or random, not \"%s\"\n",
+                 progname, s);
+        exit (1);
+      }
+  }
+
   flush_cache (st);
 
   /* Convert the loaded pixmap to an XImage.
@@ -402,7 +432,6 @@ analyze (struct state *st)
 }
 
 
-#ifndef DO_VORONOI
 /* True if the distance between any two corners is too small for it to
    make sense to draw an outline around this triangle.
  */
@@ -418,17 +447,47 @@ small_triangle_p (const XPoint *p)
   if (abs (p[2].y - p[0].y) < min) return True;
   return False;
 }
-#endif /* DO_VORONOI */
 
-#ifdef DO_VORONOI
+static Bool
+small_cell_p (const voronoi_polygon *p)
+{
+  int min = 4;
+  if (abs (p->p[0].x - p->ctr.x) < min) return True;
+  if (abs (p->p[0].y - p->ctr.y) < min) return True;
+  return False;
+}
 
-typedef struct {
-  int npoints;
-  XPoint *p;
-} voronoi_polygon;
+
+static int
+cmp_ccw (const void *v1, const void *v2)
+{
+  const voronoi_pa *p1,*p2;
+  p1 = v1;
+  p2 = v2;
+  if      (p1->slope < p2->slope) return -1;
+  else if (p1->slope > p2->slope) return  1;
+  return 0;
+}
+
+static void
+sort_ccw (XPoint *ctr, XPoint *p, int npoints)
+{
+  voronoi_pa *pa = (void *) malloc (npoints * sizeof(*pa));
+  int i;
+  for (i = 0; i < npoints; i++)
+    {
+      pa[i].p = p[i];
+      pa[i].slope = atan2 (p[i].x - ctr->x, p[i].y - ctr->y);
+    }
+  qsort (pa, npoints, sizeof(*pa), cmp_ccw);
+  for (i = 0; i < npoints; i++)
+    p[i] = pa[i].p;
+  free (pa);
+}
+
 
 static voronoi_polygon *
-delaunay_to_voronoi (int np, XYZ *p, int nv, ITRIANGLE *v)
+delaunay_to_voronoi (int np, XYZ *p, int nv, ITRIANGLE *v, double scale)
 {
   struct tri_list {
     int count, size;
@@ -439,15 +498,6 @@ delaunay_to_voronoi (int np, XYZ *p, int nv, ITRIANGLE *v)
   struct tri_list *vert_to_tri = (struct tri_list *)
     calloc (np + 1, sizeof(*vert_to_tri));
   voronoi_polygon *out = (voronoi_polygon *) calloc (np + 1, sizeof(*out));
-
-/*
-  for (i = 0; i < np; i++)
-    printf("# p %d = %d %d\n", i, (int)p[i].x, (int)p[i].y);
-  printf("\n");
-  for (i = 0; i < nv; i++)
-    printf("@ t %d = %d %d %d\n", i, (int)v[i].p1, (int)v[i].p2, (int)v[i].p3);
-  printf("\n");
-*/
 
   /* Iterate the triangles to construct a map of vertices to the
      triangles that contain them.
@@ -470,58 +520,46 @@ delaunay_to_voronoi (int np, XYZ *p, int nv, ITRIANGLE *v)
         }
     }
 
-/*
-  for (i = 0; i < nv; i++)
-    {
-      struct tri_list *t = &vert_to_tri[i];
-      printf("p %d [%d %d]:", i, (int)p[i].x, (int)p[i].y);
-      for (j = 0; j < t->count; j++) {
-        int tt = t->tri[j];
-        printf(" t %d [%d(%d %d) %d(%d %d) %d(%d %d)]",
-               tt,
-               (int)v[tt].p1,
-               (int)p[v[tt].p1].x, (int)p[v[tt].p1].y,
-               (int)v[tt].p2,
-               (int)p[v[tt].p2].x, (int)p[v[tt].p2].y,
-               (int)v[tt].p3,
-               (int)p[v[tt].p3].x, (int)p[v[tt].p3].y
-               );
-        if (tt < 0 || tt >= nv) abort();
-      }
-      printf("\n");
-    }
-*/
-
   /* For every vertex, compose a polygon whose corners are the centers
      of each triangle using that vertex.  Skip any with less than 3 points.
+
+     This is currently omitting the voronoi cells that should touch the edges
+     of the outer rectangle. Not sure exactly how to include those.
    */
   for (i = 0; i < np; i++)
     {
+      long ctr_x = 0, ctr_y = 0;
       struct tri_list *t = &vert_to_tri[i];
       int n = t->count;
       if (n < 3) n = 0;
       out[i].npoints = n;
+      if (n == 0) continue;
+      out[i].ctr.x = out[i].ctr.y = 0;
       out[i].p = (n > 0
                   ? (XPoint *) calloc (out[i].npoints + 1, sizeof (*out[i].p))
                   : 0);
-//printf("%d: ", i);
       for (j = 0; j < out[i].npoints; j++)
         {
           ITRIANGLE *tt = &v[t->tri[j]];
-          out[i].p[j].x = (p[tt->p1].x + p[tt->p2].x + p[tt->p3].x) / 3;
-          out[i].p[j].y = (p[tt->p1].y + p[tt->p2].y + p[tt->p3].y) / 3;
-//printf(" [%d: %d %d]", j, out[i].p[j].x, out[i].p[j].y);
+          out[i].p[j].x = scale * (p[tt->p1].x + p[tt->p2].x + p[tt->p3].x) / 3;
+          out[i].p[j].y = scale * (p[tt->p1].y + p[tt->p2].y + p[tt->p3].y) / 3;
+          ctr_x += out[i].p[j].x;
+          ctr_y += out[i].p[j].y;
         }
-//printf("\n");
+      out[i].ctr.x = ctr_x / out[i].npoints;  /* long -> short */
+      out[i].ctr.y = ctr_y / out[i].npoints;
+      if (out[i].ctr.x < 0) abort();
+      if (out[i].ctr.y < 0) abort();
+      sort_ccw (&out[i].ctr, out[i].p, out[i].npoints);
     }
 
+  for (i = 0; i < np+1; i++)
+    if (vert_to_tri[i].tri)
+      free (vert_to_tri[i].tri);
   free (vert_to_tri);
+
   return out;
 }
-
-#endif /* DO_VORONOI */
-
-
 
 
 static void
@@ -577,7 +615,7 @@ tessellate (struct state *st)
         XCopyArea (st->dpy, 
                    st->cache[st->thresh],
                    st->output, st->pgc,
-                   0, 0, st->delta->width, st->delta->height, 
+                   0, 0, st->xgwa.width, st->xgwa.height, 
                    0, 0);
     }
   else if (ticked_p)
@@ -589,6 +627,7 @@ tessellate (struct state *st)
       int nv = 0;
       int ntri = 0;
       int x, y, i;
+      double wscale = st->xgwa.width / (double) st->delta->width;
 
 #if 0
       fprintf(stderr, "%s: thresh %d/%d = %d=%d\n", 
@@ -657,88 +696,97 @@ tessellate (struct state *st)
       if (st->output)
         XFreePixmap (st->dpy, st->output);
       st->output = XCreatePixmap (st->dpy, st->window,
-                                  st->delta->width, st->delta->height,
+                                  st->xgwa.width, st->xgwa.height,
                                   st->xgwa.depth);
       XFillRectangle (st->dpy, st->output, st->pgc, 
-                      0, 0, st->delta->width, st->delta->height);
+                      0, 0, st->xgwa.width, st->xgwa.height);
 
-#ifdef DO_VORONOI
-
-      voronoi_polygon *polys = delaunay_to_voronoi (nv, p, ntri, v);
-      for (i = 0; i < nv; i++)
+      switch (st->mode) {
+      case VORONOI:
         {
-          if (polys[i].npoints >= 3)
+          voronoi_polygon *polys =
+            delaunay_to_voronoi (nv, p, ntri, v, wscale);
+          for (i = 0; i < nv; i++)
             {
-              unsigned long color = XGetPixel (st->img, p[i].x, p[i].y);
-              XSetForeground (st->dpy, st->pgc, color);
-              XFillPolygon (st->dpy, st->output, st->pgc,
-                            polys[i].p, polys[i].npoints,
-                            Convex, CoordModeOrigin);
-
-              if (st->outline_p)
+              if (polys[i].npoints >= 3)
                 {
-                  XColor bd;
-                  double scale = 0.8;
-                  bd.pixel = color;
-                  XQueryColor (st->dpy, st->xgwa.colormap, &bd);
-                  bd.red   *= scale;
-                  bd.green *= scale;
-                  bd.blue  *= scale;
+                  unsigned long color = XGetPixel (st->img,
+                                                   polys[i].ctr.x / wscale,
+                                                   polys[i].ctr.y / wscale);
+                  XSetForeground (st->dpy, st->pgc, color);
+                  XFillPolygon (st->dpy, st->output, st->pgc,
+                                polys[i].p, polys[i].npoints,
+                                Convex, CoordModeOrigin);
 
-                  /* bd.red = 0xFFFF; bd.green = 0; bd.blue = 0; */
+                  if (st->outline_p && !small_cell_p(&polys[i]))
+                    {
+                      XColor bd;
+                      double scale = 0.8;
+                      bd.pixel = color;
+                      XQueryColor (st->dpy, st->xgwa.colormap, &bd);
+                      bd.red   *= scale;
+                      bd.green *= scale;
+                      bd.blue  *= scale;
 
-                  XAllocColor (st->dpy, st->xgwa.colormap, &bd);
-                  XSetForeground (st->dpy, st->pgc, bd.pixel);
-                  XDrawLines (st->dpy, st->output, st->pgc,
-                              polys[i].p, polys[i].npoints,
-                              CoordModeOrigin);
-                  XFreeColors (st->dpy, st->xgwa.colormap, &bd.pixel, 1, 0);
+                      /* bd.red = 0xFFFF; bd.green = 0; bd.blue = 0; */
+
+                      XAllocColor (st->dpy, st->xgwa.colormap, &bd);
+                      XSetForeground (st->dpy, st->pgc, bd.pixel);
+                      XDrawLines (st->dpy, st->output, st->pgc,
+                                  polys[i].p, polys[i].npoints,
+                                  CoordModeOrigin);
+                      XFreeColors (st->dpy, st->xgwa.colormap, &bd.pixel,
+                                   1, 0);
+                    }
                 }
+              if (polys[i].p) free (polys[i].p);
+              polys[i].p = 0;
             }
-          if (polys[i].p) free (polys[i].p);
-          polys[i].p = 0;
+          free (polys);
         }
-      free (polys);
+        break;
 
-#else /* !DO_VORONOI */
+      case DELAUNAY:
+        for (i = 0; i < ntri; i++)
+          {
+            XPoint xp[3];
+            unsigned long color;
+            xp[0].x = p[v[i].p1].x * wscale; xp[0].y = p[v[i].p1].y * wscale;
+            xp[1].x = p[v[i].p2].x * wscale; xp[1].y = p[v[i].p2].y * wscale;
+            xp[2].x = p[v[i].p3].x * wscale; xp[2].y = p[v[i].p3].y * wscale;
 
-      for (i = 0; i < ntri; i++)
-        {
-          XPoint xp[3];
-          unsigned long color;
-          xp[0].x = p[v[i].p1].x; xp[0].y = p[v[i].p1].y;
-          xp[1].x = p[v[i].p2].x; xp[1].y = p[v[i].p2].y;
-          xp[2].x = p[v[i].p3].x; xp[2].y = p[v[i].p3].y;
+            /* Set the color of this triangle to the pixel at its midpoint. */
+            color = XGetPixel (st->img,
+                               (xp[0].x + xp[1].x + xp[2].x) / (3 * wscale),
+                               (xp[0].y + xp[1].y + xp[2].y) / (3 * wscale));
 
-          /* Set the color of this triangle to the pixel at its midpoint. */
-          color = XGetPixel (st->img,
-                             (xp[0].x + xp[1].x + xp[2].x) / 3,
-                             (xp[0].y + xp[1].y + xp[2].y) / 3);
+            XSetForeground (st->dpy, st->pgc, color);
+            XFillPolygon (st->dpy, st->output, st->pgc, xp, countof(xp),
+                          Convex, CoordModeOrigin);
 
-          XSetForeground (st->dpy, st->pgc, color);
-          XFillPolygon (st->dpy, st->output, st->pgc, xp, countof(xp),
-                        Convex, CoordModeOrigin);
+            if (st->outline_p && !small_triangle_p(xp))
+              {	/* Border the triangle with a color that is darker */
+                XColor bd;
+                double scale = 0.8;
+                bd.pixel = color;
+                XQueryColor (st->dpy, st->xgwa.colormap, &bd);
+                bd.red   *= scale;
+                bd.green *= scale;
+                bd.blue  *= scale;
 
-          if (st->outline_p && !small_triangle_p(xp))
-            {	/* Border the triangle with a color that is darker */
-              XColor bd;
-              double scale = 0.8;
-              bd.pixel = color;
-              XQueryColor (st->dpy, st->xgwa.colormap, &bd);
-              bd.red   *= scale;
-              bd.green *= scale;
-              bd.blue  *= scale;
+                /* bd.red = 0xFFFF; bd.green = 0; bd.blue = 0; */
 
-              /* bd.red = 0xFFFF; bd.green = 0; bd.blue = 0; */
-
-              XAllocColor (st->dpy, st->xgwa.colormap, &bd);
-              XSetForeground (st->dpy, st->pgc, bd.pixel);
-              XDrawLines (st->dpy, st->output, st->pgc,
-                          xp, countof(xp), CoordModeOrigin);
-              XFreeColors (st->dpy, st->xgwa.colormap, &bd.pixel, 1, 0);
-            }
-        }
-#endif /* !DO_VORONOI */
+                XAllocColor (st->dpy, st->xgwa.colormap, &bd);
+                XSetForeground (st->dpy, st->pgc, bd.pixel);
+                XDrawLines (st->dpy, st->output, st->pgc,
+                            xp, countof(xp), CoordModeOrigin);
+                XFreeColors (st->dpy, st->xgwa.colormap, &bd.pixel, 1, 0);
+              }
+          }
+        break;
+      default:
+        abort();
+      }
 
       free (p);
       free (v);
@@ -747,7 +795,7 @@ tessellate (struct state *st)
         {
           st->cache[st->thresh] =
             XCreatePixmap (st->dpy, st->window,
-                           st->delta->width, st->delta->height,
+                           st->xgwa.width, st->xgwa.height,
                            st->xgwa.depth);
           if (! st->cache[st->thresh])
             {
@@ -759,7 +807,7 @@ tessellate (struct state *st)
                        st->output,
                        st->cache[st->thresh],
                        st->pgc,
-                       0, 0, st->delta->width, st->delta->height, 
+                       0, 0, st->xgwa.width, st->xgwa.height, 
                        0, 0);
         }
     }
@@ -774,8 +822,9 @@ static Pixmap
 get_deltap (struct state *st)
 {
   int x, y;
-  int w = st->delta->width;
-  int h = st->delta->height;
+  int w = st->xgwa.width;
+  int h = st->xgwa.height;
+  double wscale = st->xgwa.width / (double) st->delta->width;
   XImage *dimg;
 
   Visual *v = st->xgwa.visual;
@@ -799,7 +848,7 @@ get_deltap (struct state *st)
   for (y = 0; y < h; y++)
     for (x = 0; x < w; x++)
       {
-        unsigned long v = XGetPixel (st->delta, x, y) << 5;
+        unsigned long v = XGetPixel (st->delta, x / wscale, y / wscale) << 5;
         unsigned long p = (((v << rpos) & rmsk) |
                            ((v << gpos) & gmsk) |
                            ((v << bpos) & bmsk));
@@ -832,11 +881,23 @@ tessellimage_draw (Display *dpy, Window window, void *closure)
 
   if (!st->img_loader &&
       st->start_time + st->duration < double_time()) {
+    int w = st->xgwa.width;
+    int h = st->xgwa.height;
+
+    /* Analysing a full-resolution image on a Retina display is too slow,
+       so scale down the source at image-load time. */
+    if (st->max_resolution > 10)
+      {
+        if (w > h && w > st->max_resolution)
+          h = st->max_resolution * h / w, w = st->max_resolution;
+        else if (h > st->max_resolution)
+          w = st->max_resolution * w / h, h = st->max_resolution;
+      }
+    /* fprintf(stderr,"%s: loading %d x %d\n", progname, w, h); */
+
     XClearWindow (st->dpy, st->window);
     if (st->image) XFreePixmap (dpy, st->image);
-    st->image = XCreatePixmap (st->dpy, st->window,
-                               st->xgwa.width, st->xgwa.height,
-                               st->xgwa.depth);
+    st->image = XCreatePixmap (st->dpy, st->window, w, h, st->xgwa.depth);
     st->img_loader = load_image_async_simple (0, st->xgwa.screen, st->window,
                                               st->image, 0, &st->geom);
     goto DONE;
@@ -851,16 +912,12 @@ tessellimage_draw (Display *dpy, Window window, void *closure)
     XCopyArea (st->dpy, 
                (st->button_down_p ? get_deltap (st) : st->output),
                st->window, st->wgc,
-               0, 0, st->delta->width, st->delta->height, 
-               (st->xgwa.width  - st->delta->width)  / 2,
-               (st->xgwa.height - st->delta->height) / 2);
+               0, 0, st->xgwa.width, st->xgwa.height, 0, 0);
   else if (!st->nthreshes)
     XCopyArea (st->dpy,
                st->image,
                st->window, st->wgc,
-               0, 0, st->xgwa.width, st->xgwa.height,
-               0,
-               0);
+               0, 0, st->xgwa.width, st->xgwa.height, 0, 0);
 
 
  DONE:
@@ -918,12 +975,15 @@ tessellimage_free (Display *dpy, Window window, void *closure)
 static const char *tessellimage_defaults [] = {
   ".background:			black",
   ".foreground:			white",
+  ".lowrez:                     True",
   "*dontClearRoot:		True",
   "*fpsSolid:			true",
+  "*mode:			random",
   "*delay:			30000",
   "*duration:			120",
   "*duration2:			0.4",
   "*maxDepth:			30000",
+  "*maxResolution:		1024",
   "*outline:			True",
   "*fillScreen:			True",
   "*cache:			True",
@@ -939,6 +999,8 @@ static XrmOptionDescRec tessellimage_options [] = {
   { "-duration",	".duration",		XrmoptionSepArg, 0 },
   { "-duration2",	".duration2",		XrmoptionSepArg, 0 },
   { "-max-depth",	".maxDepth",		XrmoptionSepArg, 0 },
+  { "-max-resolution",	".maxResolution",	XrmoptionSepArg, 0 },
+  { "-mode",		".mode",		XrmoptionSepArg, 0 },
   { "-outline",		".outline",		XrmoptionNoArg, "True"  },
   { "-no-outline",	".outline",		XrmoptionNoArg, "False" },
   { "-fill-screen",	".fillScreen",		XrmoptionNoArg, "True"  },

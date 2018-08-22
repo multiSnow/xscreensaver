@@ -1,4 +1,4 @@
-# Auto-generated: Wed Dec 20 11:14:25 PST 2017
+# Auto-generated: Sun Aug 12 16:36:38 PDT 2018
 driver/demo-Gtk-conf.c
 driver/demo-Gtk.c
 driver/screensaver-properties.desktop.in
@@ -43,6 +43,7 @@ hacks/config/compass.xml
 hacks/config/coral.xml
 hacks/config/crackberg.xml
 hacks/config/critical.xml
+hacks/config/crumbler.xml
 hacks/config/crystal.xml
 hacks/config/cube21.xml
 hacks/config/cubenetic.xml
@@ -73,6 +74,7 @@ hacks/config/euler2d.xml
 hacks/config/extrusion.xml
 hacks/config/fadeplot.xml
 hacks/config/fiberlamp.xml
+hacks/config/filmleader.xml
 hacks/config/fireworkx.xml
 hacks/config/flag.xml
 hacks/config/flame.xml
@@ -96,6 +98,7 @@ hacks/config/glcells.xml
 hacks/config/gleidescope.xml
 hacks/config/glforestfire.xml
 hacks/config/glhanoi.xml
+hacks/config/glitchpeg.xml
 hacks/config/glknots.xml
 hacks/config/glmatrix.xml
 hacks/config/glplanet.xml
@@ -144,6 +147,7 @@ hacks/config/lockward.xml
 hacks/config/loop.xml
 hacks/config/m6502.xml
 hacks/config/maze.xml
+hacks/config/maze3d.xml
 hacks/config/memscroller.xml
 hacks/config/menger.xml
 hacks/config/metaballs.xml
@@ -162,6 +166,7 @@ hacks/config/noof.xml
 hacks/config/noseguy.xml
 hacks/config/pacman.xml
 hacks/config/pedal.xml
+hacks/config/peepers.xml
 hacks/config/penetrate.xml
 hacks/config/penrose.xml
 hacks/config/petri.xml
@@ -183,6 +188,7 @@ hacks/config/qix.xml
 hacks/config/quasicrystal.xml
 hacks/config/queens.xml
 hacks/config/raverhoop.xml
+hacks/config/razzledazzle.xml
 hacks/config/rd-bomb.xml
 hacks/config/rdbomb.xml
 hacks/config/ripples.xml
@@ -233,6 +239,7 @@ hacks/config/twang.xml
 hacks/config/unicrud.xml
 hacks/config/unknownpleasures.xml
 hacks/config/vermiculate.xml
+hacks/config/vfeedback.xml
 hacks/config/vidwhacker.xml
 hacks/config/vigilance.xml
 hacks/config/vines.xml

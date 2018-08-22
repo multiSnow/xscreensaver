@@ -1,4 +1,4 @@
-/* xscreensaver, Copyright (c) 1991-2017 Jamie Zawinski <jwz@jwz.org>
+/* xscreensaver, Copyright (c) 1991-2018 Jamie Zawinski <jwz@jwz.org>
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -428,6 +428,8 @@ extern void jwxyz_draw_NSImage_or_CGImage (Display *, Drawable,
                                            Bool nsimg_p, void *NSImage_arg,
                                            XRectangle *geom_ret, 
                                            int exif_rotation);
+extern XImage *jwxyz_png_to_ximage (Display *, Visual *,
+                                    const unsigned char *, unsigned long size);
 
 extern int XSetGraphicsExposures (Display *, GC, Bool);
 extern Bool XTranslateCoordinates (Display *, Window src_w, Window dest_w,
@@ -471,8 +473,9 @@ extern int XFreePixmap (Display *, Pixmap);
 extern char *XGetAtomName (Display *, Atom);
 
 extern void set_points_list(XPoint *points, int npoints, linked_point *root);
-extern void traverse_points_list(linked_point * root);
-extern void draw_three_vertices(linked_point * a, Bool triangle);
+extern void traverse_points_list(Display *dpy, linked_point * root);
+extern void draw_three_vertices(Display *dpy, linked_point * a,
+                                Bool triangle);
 extern double compute_edge_length(linked_point * a, linked_point * b);
 extern double get_angle(double a, double b, double c);
 extern Bool is_same_slope(linked_point * a);
@@ -535,7 +538,8 @@ extern void check_gl_error (const char *type);
 // Only utils/xft.c uses this, out of necessity.
 struct jwxyz_Visual {
   int class;		/* class of screen (monochrome, etc.) */
-  unsigned long rgba_masks[4];	/* mask values */
+  unsigned long red_mask, green_mask, blue_mask;	/* same as Xlib.h */
+  unsigned long alpha_mask;				/* new */
 };
 
 struct jwxyz_XGCValues {
