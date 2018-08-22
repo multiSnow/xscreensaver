@@ -1,5 +1,4 @@
 diff --git a/utils/thread_util.c b/utils/thread_util.c
-index 5ad5d47..71c8633 100644
 --- a/utils/thread_util.c
 +++ b/utils/thread_util.c
 @@ -960,7 +960,7 @@ void *io_thread_create(struct io_thread *self, void *parent, void *(*start_routi

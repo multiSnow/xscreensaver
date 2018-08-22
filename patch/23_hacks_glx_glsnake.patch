@@ -1,5 +1,4 @@
 diff --git a/hacks/glx/glsnake.c b/hacks/glx/glsnake.c
-index 5f20421..8b2f25c 100644
 --- a/hacks/glx/glsnake.c
 +++ b/hacks/glx/glsnake.c
 @@ -540,7 +540,7 @@ static const struct model_s model[] = {

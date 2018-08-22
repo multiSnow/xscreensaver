@@ -1,5 +1,4 @@
 diff --git a/driver/xscreensaver-getimage-video b/driver/xscreensaver-getimage-video
-index dbc8986..38f6d1c 100755
 --- a/driver/xscreensaver-getimage-video
 +++ b/driver/xscreensaver-getimage-video
 @@ -34,6 +34,8 @@ my $version  = q{ $Revision: 1.23 $ }; $version =~ s/^[^0-9]+([0-9.]+).*$/$1/;

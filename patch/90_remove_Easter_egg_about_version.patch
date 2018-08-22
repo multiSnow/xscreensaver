@@ -1,5 +1,4 @@
 diff --git a/driver/prefs.c b/driver/prefs.c
-index ee3a196..7f3d86c 100644
 --- a/driver/prefs.c
 +++ b/driver/prefs.c
 @@ -1736,6 +1736,8 @@ decrepit_p (void)
@@ -8,6 +7,6 @@ index ee3a196..7f3d86c 100644
  
 +  return 0;
 +
-   time_t now = time ((time_t *) 0);				/*       */
-   struct tm *tm = localtime (&now);				/*   d   */
-   const char *s = screensaver_id;				/*   o   */
+   time_t now = time ((time_t *) 0);				/*   d   */
+   struct tm *tm = localtime (&now);				/*   o   */
+   const char *s = screensaver_id;				/*   n   */

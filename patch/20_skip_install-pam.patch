@@ -1,5 +1,4 @@
 diff --git a/driver/Makefile.in b/driver/Makefile.in
-index a570a27..a1c4bd7 100644
 --- a/driver/Makefile.in
 +++ b/driver/Makefile.in
 @@ -257,7 +257,7 @@ all: $(EXES) $(EXES2)

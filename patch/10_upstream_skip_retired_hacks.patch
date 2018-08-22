@@ -1,8 +1,7 @@
 diff --git a/hacks/Makefile.in b/hacks/Makefile.in
-index 643a2ca..d361d8c 100644
 --- a/hacks/Makefile.in
 +++ b/hacks/Makefile.in
-@@ -275,7 +275,7 @@ TARFILES	= $(SRCS) $(HDRS) $(SCRIPTS) $(MEN) $(RETIRED_MEN) \
+@@ -268,7 +268,7 @@ TARFILES	= $(SRCS) $(HDRS) $(SCRIPTS) $(MEN) $(RETIRED_MEN) \
  
  
  default: all
@@ -12,10 +11,9 @@ index 643a2ca..d361d8c 100644
  install:   install-program   install-scripts install-xml install-man
  uninstall: uninstall-program uninstall-xml uninstall-man
 diff --git a/hacks/glx/Makefile.in b/hacks/glx/Makefile.in
-index 56443f1..5f6fcdd 100644
 --- a/hacks/glx/Makefile.in
 +++ b/hacks/glx/Makefile.in
-@@ -266,7 +266,7 @@ TARFILES	= $(SRCS) $(HDRS) $(GL_MEN) $(RETIRED_MEN) $(EXTRAS)
+@@ -276,7 +276,7 @@ TARFILES	= $(SRCS) $(HDRS) $(GL_MEN) $(RETIRED_MEN) $(EXTRAS)
  
  
  default: all

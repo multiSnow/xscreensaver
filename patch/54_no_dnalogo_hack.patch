@@ -1,5 +1,4 @@
 diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
-index fa2587a..a8f6bc8 100644
 --- a/driver/XScreenSaver.ad.in
 +++ b/driver/XScreenSaver.ad.in
 @@ -253,7 +253,6 @@ GetViewPortIsFullOfLies: False

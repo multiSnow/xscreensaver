@@ -1,5 +1,4 @@
 diff --git a/configure.in b/configure.in
-index 74235ab..b02eb77 100644
 --- a/configure.in
 +++ b/configure.in
 @@ -64,6 +64,9 @@ AH_TEMPLATE([HAVE_XHPDISABLERESET],
@@ -12,7 +11,7 @@ index 74235ab..b02eb77 100644
  AH_TEMPLATE([HAVE_DPMS_EXTENSION],
  	    [Define this if you have the XDPMS extension.  This is standard
  	    on sufficiently-recent XFree86 systems, and possibly elsewhere. 
-@@ -1563,6 +1566,35 @@ fi
+@@ -1559,6 +1562,35 @@ fi
  #fi
  
  
@@ -49,7 +48,6 @@ index 74235ab..b02eb77 100644
  #
  #       Check for the DPMS server extension.
 diff --git a/driver/prefs.c b/driver/prefs.c
-index ee3a196..9a7f4cb 100644
 --- a/driver/prefs.c
 +++ b/driver/prefs.c
 @@ -1140,6 +1140,9 @@ load_init_file (Display *dpy, saver_preferences *p)
@@ -63,7 +61,6 @@ index ee3a196..9a7f4cb 100644
    p->use_proc_interrupts = get_boolean_resource (dpy,
                                                   "procInterrupts", "Boolean");
 diff --git a/driver/timers.c b/driver/timers.c
-index ea97f34..0feedc7 100644
 --- a/driver/timers.c
 +++ b/driver/timers.c
 @@ -37,6 +37,10 @@
@@ -96,7 +93,6 @@ index ea97f34..0feedc7 100644
  #ifdef HAVE_SGI_SAVER_EXTENSION
  	      if (si->using_sgi_saver_extension)
 diff --git a/driver/types.h b/driver/types.h
-index f1630b0..464b127 100644
 --- a/driver/types.h
 +++ b/driver/types.h
 @@ -63,6 +63,10 @@ struct poll_mouse_data {
@@ -137,7 +133,6 @@ index f1630b0..464b127 100644
  # ifdef HAVE_SGI_SAVER_EXTENSION
    int sgi_saver_ext_event_number;
 diff --git a/driver/xscreensaver.c b/driver/xscreensaver.c
-index dd27cae..ca212ba 100644
 --- a/driver/xscreensaver.c
 +++ b/driver/xscreensaver.c
 @@ -660,6 +660,9 @@ connect_to_server (saver_info *si, int *argc, char **argv)

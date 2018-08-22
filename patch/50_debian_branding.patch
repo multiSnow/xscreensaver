@@ -1,5 +1,4 @@
 diff --git a/driver/XScreenSaver.ad.in b/driver/XScreenSaver.ad.in
-index fa2587a..21d79fa 100644
 --- a/driver/XScreenSaver.ad.in
 +++ b/driver/XScreenSaver.ad.in
 @@ -59,11 +59,11 @@

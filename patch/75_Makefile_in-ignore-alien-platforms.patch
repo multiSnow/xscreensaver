@@ -1,5 +1,4 @@
 diff --git a/Makefile.in b/Makefile.in
-index 17c698d..67a4959 100644
 --- a/Makefile.in
 +++ b/Makefile.in
 @@ -17,6 +17,7 @@ TARFILES	= README README.hacking README.VMS INSTALL \

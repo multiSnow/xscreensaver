@@ -1,5 +1,4 @@
 diff --git a/Makefile.in b/Makefile.in
-index 17c698d..bfcf569 100644
 --- a/Makefile.in
 +++ b/Makefile.in
 @@ -54,8 +54,8 @@ clean::

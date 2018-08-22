@@ -1,8 +1,7 @@
 diff --git a/hacks/Makefile.in b/hacks/Makefile.in
-index 643a2ca..205179b 100644
 --- a/hacks/Makefile.in
 +++ b/hacks/Makefile.in
-@@ -857,8 +857,8 @@ cwaves:		cwaves.o	$(HACK_OBJS) $(COL)
+@@ -852,8 +852,8 @@ cwaves:		cwaves.o	$(HACK_OBJS) $(COL)
  
  m6502.h:
  	@echo "building m6502.h from $(srcdir)/images/m6502/*.asm"; \
@@ -12,4 +11,4 @@ index 643a2ca..205179b 100644
 +	  UTILS_SRC="$(UTILS_SRC)" xargs $(srcdir)/m6502.sh m6502.h
  
  m6502.o:	m6502.h
- m6502:		m6502.o		asm6502.o $(HACK_OBJS) $(ATV)
+ m6502:		m6502.o		asm6502.o $(HACK_OBJS) $(ATV) $(PNG)

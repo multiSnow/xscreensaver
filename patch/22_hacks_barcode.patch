@@ -1,5 +1,4 @@
 diff --git a/hacks/barcode.c b/hacks/barcode.c
-index 271aad9..8066e4c 100644
 --- a/hacks/barcode.c
 +++ b/hacks/barcode.c
 @@ -118,8 +118,6 @@ static const char *words[] =
