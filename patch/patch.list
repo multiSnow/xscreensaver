@@ -20,3 +20,4 @@
 81_hacks_deterministic_file_order.patch
 90_remove_Easter_egg_about_version.patch
 xss.patch
+out-of-tree-build.patch
